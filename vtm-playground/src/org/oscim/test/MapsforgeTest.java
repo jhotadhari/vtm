@@ -60,6 +60,14 @@ public class MapsforgeTest extends GdxMapApp {
     private final boolean s3db;
     private final File themeFile;
 
+    // Layer references for toggling
+    private TerrainTileLayer mTerrainLayer;
+    private BitmapTileLayer mHillshadeLayer;
+    private VectorTileLayer mBaseLayer;
+    private boolean mTerrainVisible = true;
+    private boolean mHillshadeVisible = true;
+    private boolean mBaseVisible = true;
+
     MapsforgeTest(File demFolder, List<File> mapFiles, File themeFile) {
         this(demFolder, mapFiles, false, false, themeFile);
     }
@@ -74,18 +82,20 @@ public class MapsforgeTest extends GdxMapApp {
 
     @Override
     public void createLayers() {
-        MultiMapFileTileSource multiMapFileTileSource = new MultiMapFileTileSource();
-        for (File mapFile : mapFiles) {
-            MapFileTileSource mapFileTileSource = new MapFileTileSource();
-            mapFileTileSource.setMapFile(mapFile.getAbsolutePath());
-            if ("world.map".equalsIgnoreCase(mapFile.getName()))
-                mapFileTileSource.setPriority(-1);
-            multiMapFileTileSource.add(mapFileTileSource);
+        MultiMapFileTileSource multiMapFileTileSource = null;
+        if (!mapFiles.isEmpty()) {
+            multiMapFileTileSource = new MultiMapFileTileSource();
+            for (File mapFile : mapFiles) {
+                MapFileTileSource mapFileTileSource = new MapFileTileSource();
+                mapFileTileSource.setMapFile(mapFile.getAbsolutePath());
+                if ("world.map".equalsIgnoreCase(mapFile.getName()))
+                    mapFileTileSource.setPriority(-1);
+                multiMapFileTileSource.add(mapFileTileSource);
+            }
+            mBaseLayer = mMap.setBaseMap(multiMapFileTileSource);
+        } else {
+            mBaseLayer = null;
         }
-        //multiMapFileTileSource.setDeduplicate(true);
-        //multiMapFileTileSource.setPreferredLanguage("en");
-
-        VectorTileLayer l = mMap.setBaseMap(multiMapFileTileSource);
         loadTheme(null);
 
         if (demFolder != null) {
@@ -94,20 +104,28 @@ public class MapsforgeTest extends GdxMapApp {
                     .setAdaptiveZoomEnabled(true)
                     .setCustomQualityScale(1);
             final HillshadingTileSource hillshadingTileSource = new HillshadingTileSource(Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL, new DemFolderFS(demFolder), algorithm, 128, Color.BLACK, AwtGraphicFactory.INSTANCE);
-            mMap.layers().add(new BitmapTileLayer(mMap, hillshadingTileSource, 150));
+            mHillshadeLayer = new BitmapTileLayer(mMap, hillshadingTileSource, 150);
+            mMap.layers().add(mHillshadeLayer);
 
-            // 3D terrain mesh
-            TerrainTileSource terrainSource = new TerrainTileSource(Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL, new DemFolderFS(demFolder));
-            mMap.layers().add(2, new TerrainTileLayer(mMap, terrainSource));
+            // 3D terrain mesh (bright red debug color for visibility)
+            TerrainTileSource terrainSource = new TerrainTileSource(
+                    Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL,
+                    new DemFolderFS(demFolder))
+                    .setTerrainColor(Color.get(220, 80, 60, 255)); // reddish-brown
+            mTerrainLayer = new TerrainTileLayer(mMap, terrainSource);
+            mMap.layers().add(2, mTerrainLayer);
         }
 
-        BuildingLayer buildingLayer = s3db ? new S3DBLayer(mMap, l, SHADOWS) : new BuildingLayer(mMap, l, false, SHADOWS);
-        mMap.layers().add(buildingLayer);
+        BuildingLayer buildingLayer = null;
+        if (mBaseLayer != null) {
+            buildingLayer = s3db ? new S3DBLayer(mMap, mBaseLayer, SHADOWS) : new BuildingLayer(mMap, mBaseLayer, false, SHADOWS);
+            mMap.layers().add(buildingLayer);
 
-        if (poi3d)
-            mMap.layers().add(new Poi3DLayer(mMap, l));
+            if (poi3d)
+                mMap.layers().add(new Poi3DLayer(mMap, mBaseLayer));
 
-        mMap.layers().add(new LabelLayer(mMap, l));
+            mMap.layers().add(new LabelLayer(mMap, mBaseLayer));
+        }
 
         DefaultMapScaleBar mapScaleBar = new DefaultMapScaleBar(mMap);
         mapScaleBar.setScaleBarMode(DefaultMapScaleBar.ScaleBarMode.BOTH);
@@ -121,13 +139,21 @@ public class MapsforgeTest extends GdxMapApp {
         renderer.setOffset(5, 0);
         mMap.layers().add(mapScaleBarLayer);
 
-        MapPosition pos = MapPreferences.getMapPosition();
-        BoundingBox bbox = multiMapFileTileSource.getBoundingBox();
-        if (pos == null || !bbox.contains(pos.getGeoPoint())) {
-            pos = new MapPosition();
-            pos.setByBoundingBox(bbox, Tile.SIZE * 4, Tile.SIZE * 4);
+        if (!mapFiles.isEmpty()) {
+            MapPosition pos = MapPreferences.getMapPosition();
+            BoundingBox bbox = multiMapFileTileSource.getBoundingBox();
+            if (pos == null || !bbox.contains(pos.getGeoPoint())) {
+                pos = new MapPosition();
+                pos.setByBoundingBox(bbox, Tile.SIZE * 4, Tile.SIZE * 4);
+            }
+            mMap.setMapPosition(pos);
+        } else {
+            // No map file: position over the DEM area (e.g., Andorra/Pyrenees)
+            MapPosition pos = new MapPosition();
+            pos.setPosition(1.55, 42.5); // Andorra la Vella
+            pos.setZoomLevel(12);
+            mMap.setMapPosition(pos);
         }
-        mMap.setMapPosition(pos);
 
         if (SHADOWS) {
             final ExtrusionRenderer extrusionRenderer = buildingLayer.getExtrusionRenderer();
@@ -168,6 +194,33 @@ public class MapsforgeTest extends GdxMapApp {
             }
             return true;
         }
+        if (keycode == Input.Keys.F6) {
+            // Toggle terrain layer
+            mTerrainVisible = !mTerrainVisible;
+            if (mTerrainLayer != null)
+                mTerrainLayer.setEnabled(mTerrainVisible);
+            mMap.updateMap(true);
+            System.out.println("Terrain: " + (mTerrainVisible ? "ON" : "OFF"));
+            return true;
+        }
+        if (keycode == Input.Keys.F7) {
+            // Toggle hillshade layer
+            mHillshadeVisible = !mHillshadeVisible;
+            if (mHillshadeLayer != null)
+                mHillshadeLayer.setEnabled(mHillshadeVisible);
+            mMap.updateMap(true);
+            System.out.println("Hillshade: " + (mHillshadeVisible ? "ON" : "OFF"));
+            return true;
+        }
+        if (keycode == Input.Keys.F8) {
+            // Toggle base map layer
+            mBaseVisible = !mBaseVisible;
+            if (mBaseLayer != null)
+                mBaseLayer.setEnabled(mBaseVisible);
+            mMap.updateMap(true);
+            System.out.println("Base map: " + (mBaseVisible ? "ON" : "OFF"));
+            return true;
+        }
 
         return false;
     }
@@ -185,11 +238,10 @@ public class MapsforgeTest extends GdxMapApp {
     }
 
     static List<File> getMapFiles(String[] args) {
-        if (args.length == 0) {
-            throw new IllegalArgumentException("missing argument: <mapFile>");
-        }
-
         List<File> result = new ArrayList<>();
+        if (args.length == 0)
+            return result;
+
         for (String arg : args) {
             File mapFile = new File(arg);
             if (!mapFile.exists()) {
