@@ -224,8 +224,14 @@ public class MapsforgeTest extends GdxMapApp {
      * @param args command line args: expects the map files as multiple parameters
      *             with possible theme file as 1st argument
      *             and possible SRTM hgt folder as 2nd argument.
+     *             Supports comma-separated single-argument syntax (e.g. from Gradle --args).
      */
     public static void main(String[] args) {
+        // Split comma-separated single-argument (from Gradle's --args)
+        if (args.length == 1 && args[0].contains(",")) {
+            args = args[0].split(",");
+        }
+
         GdxMapApp.init();
         File themeFile = getThemeFile(args);
         if (themeFile != null)
