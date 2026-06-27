@@ -15,6 +15,7 @@
 package org.oscim.terrain.tiling;
 
 import org.mapsforge.map.layer.hills.DemFolder;
+import org.oscim.backend.canvas.Color;
 import org.oscim.map.Viewport;
 import org.oscim.terrain.projection.MercatorTerrainProjection;
 import org.oscim.terrain.projection.TerrainProjection;
@@ -39,6 +40,8 @@ public class TerrainTileSource extends TileSource {
 
     private final DemFolder mDemFolder;
     private final TerrainProjection mProjection;
+    private float mElevationExaggeration = 3.0f;
+    private int mTerrainColor = Color.get(180, 160, 140, 255);
 
     /**
      * Creates a terrain tile source with default Mercator projection.
@@ -63,6 +66,28 @@ public class TerrainTileSource extends TileSource {
 
     public TerrainProjection getProjection() {
         return mProjection;
+    }
+
+    /** Sets the elevation exaggeration factor (default 3.0). */
+    public TerrainTileSource setElevationExaggeration(float factor) {
+        mElevationExaggeration = factor;
+        return this;
+    }
+
+    /** Returns the elevation exaggeration factor. */
+    public float getElevationExaggeration() {
+        return mElevationExaggeration;
+    }
+
+    /** Sets the terrain mesh color. */
+    public TerrainTileSource setTerrainColor(int color) {
+        mTerrainColor = color;
+        return this;
+    }
+
+    /** Returns the terrain mesh color. */
+    public int getTerrainColor() {
+        return mTerrainColor;
     }
 
     @Override

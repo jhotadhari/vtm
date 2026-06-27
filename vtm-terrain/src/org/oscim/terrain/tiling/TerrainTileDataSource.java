@@ -109,7 +109,8 @@ public class TerrainTileDataSource implements ITileDataSource {
                     scale,
                     bottomLat, topLat,
                     leftLon, rightLon,
-                    sampler);
+                    sampler,
+                    mTileSource.getElevationExaggeration());
 
             // Pass the mesh data to the loader via package-level field
             // (the loader is the sink, in the same package)

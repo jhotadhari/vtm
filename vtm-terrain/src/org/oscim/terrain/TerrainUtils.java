@@ -79,6 +79,7 @@ public final class TerrainUtils {
      * @param lonMin      minimum (westernmost) longitude of the tile in degrees
      * @param lonMax      maximum (easternmost) longitude of the tile in degrees
      * @param elevationSampler callback to get elevation in meters at (lat, lon)
+     * @param exaggeration    multiplier for elevation (1.0 = real, 2.0+ = mountains appear higher)
      * @return a GeometryBuffer with triangle mesh data, or null on error
      */
     public static GeometryBuffer generateTerrainMesh(
@@ -89,7 +90,8 @@ public final class TerrainUtils {
             double tileScale,
             double latMin, double latMax,
             double lonMin, double lonMax,
-            ElevationSampler elevationSampler) {
+            ElevationSampler elevationSampler,
+            float exaggeration) {
 
         int N = getGridResolution((int) (Math.log(tileScale) / Math.log(2) + 0.5));
 
@@ -123,8 +125,8 @@ public final class TerrainUtils {
                 // Query elevation
                 float elevMeters = elevationSampler.getElevation((float) lat, (float) lon);
 
-                // Convert elevation to tile-local z
-                float tz = projection.elevToTileZ(elevMeters, lat, tileScale);
+                // Convert elevation to tile-local z with exaggeration
+                float tz = projection.elevToTileZ(elevMeters * exaggeration, lat, tileScale);
 
                 // Store vertex
                 int vIdx = (j * N + i) * 3;

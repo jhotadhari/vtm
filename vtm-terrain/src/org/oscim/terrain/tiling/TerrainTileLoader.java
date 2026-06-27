@@ -38,10 +38,6 @@ public class TerrainTileLoader extends TileLoader {
     private final TerrainTileSource mTileSource;
     private final ITileDataSource mTileDataSource;
 
-    /** Default terrain color: off-white / light earth tone. */
-    /** Default terrain color: off-white earth tone (RGBA 217, 209, 191, 255). */
-    private static final int TERRAIN_COLOR = Color.get(217, 209, 191, 255);
-
     /**
      * Mesh data passed from the data source during query().
      * Set by TerrainTileDataSource within the same package.
@@ -71,7 +67,7 @@ public class TerrainTileLoader extends TileLoader {
             float groundScale = mTile.getGroundScale();
 
             // Create ExtrusionBucket with the terrain mesh
-            ExtrusionBucket bucket = new ExtrusionBucket(0, groundScale, TERRAIN_COLOR);
+            ExtrusionBucket bucket = new ExtrusionBucket(0, groundScale, mTileSource.getTerrainColor());
             bucket.addMesh(mMesh);
 
             // Wrap in ExtrusionBuckets for the renderer
