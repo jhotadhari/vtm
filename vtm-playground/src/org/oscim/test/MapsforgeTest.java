@@ -148,10 +148,9 @@ public class MapsforgeTest extends GdxMapApp {
             }
             mMap.setMapPosition(pos);
         } else {
-            // No map file: position over DEM area
+            // No map file: position over DEM area (Southern Peru)
             MapPosition pos = new MapPosition();
-            // La Paz / Lake Titicaca area (Bolivia, ~S17 W068)
-            pos.setPosition(-17.0, -68.5); // Center of HGT coverage
+            pos.setPosition(-18.5, -69.5); // Within S18-S19 W069 HGT tiles
             pos.setZoomLevel(10);
             mMap.setMapPosition(pos);
         }

@@ -56,6 +56,7 @@ public class TerrainTileRenderer extends TileRenderer {
     /** Cached bucket set for current frame. */
     private ExtrusionBuckets[] mTerrainSet = new ExtrusionBuckets[32];
     private int mTerrainCnt;
+    private int mLastLogCnt = -1; // for debug logging
 
     public TerrainTileRenderer() {
         super();
@@ -94,6 +95,7 @@ public class TerrainTileRenderer extends TileRenderer {
             // Compile if not already done (one tile per frame max)
             if (!ebs.compiled) {
                 if (!ebs.compile()) {
+                    System.err.println("TERRAIN: compile failed tile " + tile);
                     continue;
                 }
             }
@@ -101,6 +103,10 @@ public class TerrainTileRenderer extends TileRenderer {
             mTerrainSet[cnt++] = ebs;
         }
         mTerrainCnt = cnt;
+        if (cnt > 0 && cnt != mLastLogCnt) {
+            System.out.println("TERRAIN: rendering " + cnt + " tiles");
+            mLastLogCnt = cnt;
+        }
     }
 
     @Override

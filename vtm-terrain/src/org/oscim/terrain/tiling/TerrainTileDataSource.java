@@ -100,6 +100,8 @@ public class TerrainTileDataSource implements ITileDataSource {
                 return;
             }
 
+            System.out.println("TERRAIN: generating mesh for " + tile);
+
             // Generate terrain mesh
             GeometryBuffer mesh = TerrainUtils.generateTerrainMesh(
                     mProjection,
