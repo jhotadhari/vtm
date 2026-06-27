@@ -41,6 +41,8 @@ import org.oscim.renderer.GLViewport;
 import org.oscim.scalebar.*;
 import org.oscim.theme.ExternalRenderTheme;
 import org.oscim.theme.internal.VtmThemes;
+import org.oscim.terrain.layer.TerrainTileLayer;
+import org.oscim.terrain.tiling.TerrainTileSource;
 import org.oscim.tiling.source.hills.HillshadingTileSource;
 import org.oscim.tiling.source.mapfile.MapFileTileSource;
 import org.oscim.tiling.source.mapfile.MultiMapFileTileSource;
@@ -87,14 +89,16 @@ public class MapsforgeTest extends GdxMapApp {
         loadTheme(null);
 
         if (demFolder != null) {
+            // 2D hillshading overlay
             final AdaptiveClasyHillShading algorithm = new AdaptiveClasyHillShading()
-                    // You can make additional behavior adjustments
                     .setAdaptiveZoomEnabled(true)
-                    // .setZoomMinOverride(0)
-                    // .setZoomMaxOverride(17)
                     .setCustomQualityScale(1);
             final HillshadingTileSource hillshadingTileSource = new HillshadingTileSource(Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL, new DemFolderFS(demFolder), algorithm, 128, Color.BLACK, AwtGraphicFactory.INSTANCE);
             mMap.layers().add(new BitmapTileLayer(mMap, hillshadingTileSource, 150));
+
+            // 3D terrain mesh
+            TerrainTileSource terrainSource = new TerrainTileSource(Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL, new DemFolderFS(demFolder));
+            mMap.layers().add(2, new TerrainTileLayer(mMap, terrainSource));
         }
 
         BuildingLayer buildingLayer = s3db ? new S3DBLayer(mMap, l, SHADOWS) : new BuildingLayer(mMap, l, false, SHADOWS);

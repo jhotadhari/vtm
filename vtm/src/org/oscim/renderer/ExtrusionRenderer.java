@@ -49,6 +49,13 @@ public abstract class ExtrusionRenderer extends LayerRenderer {
     private boolean mEnableCurrentSunPos;
     private boolean mUseLight = true;
 
+    /**
+     * If true (default), clear the depth buffer at the start of
+     * {@link #render}. Set to false for layers that render after
+     * terrain to avoid overwriting the terrain depth.
+     */
+    protected boolean mClearDepth = true;
+
     public ExtrusionRenderer(boolean mesh, boolean translucent) {
         mMesh = mesh;
         mTranslucent = translucent;
@@ -60,27 +67,27 @@ public abstract class ExtrusionRenderer extends LayerRenderer {
         /**
          * The vertex position as attribute.
          */
-        int aPos;
+        public int aPos;
 
         /**
          * The normal of vertex's face as attribute.
          */
-        int aNormal;
+        public int aNormal;
 
         /**
          * The alpha value (e.g. for fading animation) as uniform.
          */
-        int uAlpha;
+        public int uAlpha;
 
         /**
          * The extrusion color(s) as uniform.
          */
-        int uColor;
+        public int uColor;
 
         /**
          * The lights position vector as uniform.
          */
-        int uLight;
+        public int uLight;
 
         /**
          * The shader render mode as uniform.
@@ -92,17 +99,17 @@ public abstract class ExtrusionRenderer extends LayerRenderer {
          * 2: draw side two
          * 3: draw outline
          */
-        int uMode;
+        public int uMode;
 
         /**
          * The model-view-projection matrix as uniform.
          */
-        int uMVP;
+        public int uMVP;
 
         /**
          * The height limit of extrusions as uniform.
          */
-        int uZLimit;
+        public int uZLimit;
 
         public Shader(String shader) {
             this(shader, null);
@@ -120,6 +127,11 @@ public abstract class ExtrusionRenderer extends LayerRenderer {
             aPos = getAttrib("a_pos");
             aNormal = getAttrib("a_normal");
             uLight = getUniform("u_light");
+        }
+
+        /** Returns the GL program ID, or 0 if not created. */
+        public int getProgram() {
+            return program;
         }
     }
 
@@ -193,7 +205,8 @@ public abstract class ExtrusionRenderer extends LayerRenderer {
         float currentAlpha = 0;
 
         gl.depthMask(true);
-        gl.clear(GL.DEPTH_BUFFER_BIT);
+        if (mClearDepth)
+            gl.clear(GL.DEPTH_BUFFER_BIT);
 
         GLState.test(true, false);
 
