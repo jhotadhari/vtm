@@ -96,7 +96,8 @@ public class MapsforgeTest extends GdxMapApp {
         } else {
             mBaseLayer = null;
         }
-        loadTheme(null);
+        if (mBaseLayer != null)
+            loadTheme(null);
 
         if (demFolder != null) {
             // 2D hillshading overlay

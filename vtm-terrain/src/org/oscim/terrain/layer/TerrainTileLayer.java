@@ -64,6 +64,8 @@ public class TerrainTileLayer extends TileLayer {
                 tileSource.getZoomLevelMax());
 
         initLoader(getNumLoaders());
+        System.out.println("TERRAIN: layer created, zoom range "
+                + tileSource.getZoomLevelMin() + "-" + tileSource.getZoomLevelMax());
     }
 
     @Override

@@ -53,10 +53,11 @@ public class TerrainTileLoader extends TileLoader {
     @Override
     protected boolean loadTile(MapTile tile) {
         try {
+            System.out.println("TERRAIN: loadTile " + tile);
             mMesh = null;
             mTileDataSource.query(tile, this);
         } catch (Exception e) {
-            return false;
+            System.err.println("TERRAIN: loadTile error " + tile + ": " + e);
         }
         return true;
     }
