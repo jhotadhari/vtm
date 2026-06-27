@@ -27,12 +27,6 @@ sourceSets {
 application {
     mainClass = 'org.oscim.test.MapsforgeTest'
 
-    run {
-        if (project.hasProperty("args")) {
-            args project.getProperty("args").split(",")
-        }
-    }
-
     tasks.register('fatJar', Jar) {
         dependsOn configurations.runtimeClasspath
         archiveClassifier = 'jar-with-dependencies'
@@ -43,5 +37,11 @@ application {
         }
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
         with jar
+    }
+}
+
+run {
+    if (project.hasProperty("args")) {
+        args project.getProperty("args").split(",")
     }
 }
