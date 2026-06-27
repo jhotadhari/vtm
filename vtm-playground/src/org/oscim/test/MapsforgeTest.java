@@ -148,10 +148,11 @@ public class MapsforgeTest extends GdxMapApp {
             }
             mMap.setMapPosition(pos);
         } else {
-            // No map file: position over the DEM area (e.g., Andorra/Pyrenees)
+            // No map file: position over DEM area
             MapPosition pos = new MapPosition();
-            pos.setPosition(1.55, 42.5); // Andorra la Vella
-            pos.setZoomLevel(12);
+            // La Paz / Lake Titicaca area (Bolivia, ~S17 W068)
+            pos.setPosition(-17.0, -68.5); // Center of HGT coverage
+            pos.setZoomLevel(10);
             mMap.setMapPosition(pos);
         }
 
