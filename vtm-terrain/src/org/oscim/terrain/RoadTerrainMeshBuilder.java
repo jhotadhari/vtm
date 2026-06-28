@@ -24,8 +24,6 @@ import org.oscim.layers.tile.MapTile;
 import org.oscim.renderer.MapRenderer;
 import org.oscim.terrain.layer.TerrainTileLayer;
 
-import java.util.logging.Logger;
-
 /**
  * Generates 3D triangle-strip meshes for major roads that follow the terrain
  * surface.
@@ -42,13 +40,17 @@ import java.util.logging.Logger;
  */
 public final class RoadTerrainMeshBuilder {
 
-    private static final Logger log = Logger.getLogger(RoadTerrainMeshBuilder.class.getName());
-
     /** Scale factor for mesh coordinates (same as MapRenderer.COORD_SCALE). */
     private static final float COORD_SCALE = MapRenderer.COORD_SCALE;
 
-    /** Z bias in meters to prevent z-fighting with the terrain mesh. */
-    private static final float Z_BIAS_METERS = 0.5f;
+    /**
+     * Mesh-unit Z bias to prevent z-fighting with the terrain mesh.
+     * Applied directly in short Z units (not meters) so it survives the
+     * (short) cast in ExtrusionBucket.addMesh() at all zoom levels.
+     * At zoom 14 equator, 0.35 mesh units ≈ 0.17 m — visible separation
+     * for depth testing, invisible to the eye.
+     */
+    private static final float Z_BIAS_MESH_UNITS = 0.35f;
 
     // Road widths in meters
     private static final float WIDTH_MOTORWAY = 12f;
@@ -165,7 +167,8 @@ public final class RoadTerrainMeshBuilder {
             if (Float.isNaN(elevMeters))
                 elevMeters = 0f;
 
-            tz[i] = metersToMeshZ(elevMeters + Z_BIAS_METERS, lats[i], scale);
+            tz[i] = TerrainTileLayer.metersToTileZ(elevMeters, lats[i], scale)
+                    + Z_BIAS_MESH_UNITS;
 
             // Convert tile-local pixel coords to mesh coords (multiply by COORD_SCALE)
             mx[i] = px * COORD_SCALE;
@@ -227,9 +230,18 @@ public final class RoadTerrainMeshBuilder {
                 float dyOut = my[i + 1] - my[i];
                 float lenOut = (float) Math.sqrt(dxOut * dxOut + dyOut * dyOut);
 
-                if (lenIn < 0.001f || lenOut < 0.001f) {
+                if (lenIn < 0.001f && lenOut < 0.001f) {
+                    // Both segments degenerate — use arbitrary perpendicular
                     perpX = 1;
                     perpY = 0;
+                } else if (lenIn < 0.001f) {
+                    // Only incoming degenerate — use outgoing direction
+                    perpX = -dyOut / lenOut;
+                    perpY = dxOut / lenOut;
+                } else if (lenOut < 0.001f) {
+                    // Only outgoing degenerate — use incoming direction
+                    perpX = -dyIn / lenIn;
+                    perpY = dxIn / lenIn;
                 } else {
                     // Normalize and average
                     float avgX = dxIn / lenIn + dxOut / lenOut;
@@ -298,16 +310,4 @@ public final class RoadTerrainMeshBuilder {
         return gb;
     }
 
-    /**
-     * Converts elevation in meters to mesh Z units.
-     * Uses the same formula as {@link TerrainTileLayer#metersToTileZ}
-     * but without the base elevation offset (which is already applied
-     * by getElevation).
-     */
-    private static float metersToMeshZ(float meters, double lat, double scale) {
-        if (meters == Short.MIN_VALUE)
-            return 0f;
-        float groundScale = (float) MercatorProjection.groundResolutionWithScale(lat, scale);
-        return meters / (groundScale * 10); // 10 cm steps, matches ExtrusionUtils.mapGroundScale
-    }
 }

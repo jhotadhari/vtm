@@ -66,9 +66,6 @@ public class TerrainTileLayer extends TileLayer {
     /** Key for storing vector drape TextureItem in MapTile's TileData chain. */
     private static final Object TERRAIN_VECTOR_TEX = "terrain_vector_texture";
 
-    /** Key for storing road ExtrusionBuckets in MapTile's TileData chain. */
-    private static final Object TERRAIN_ROAD = "terrain_road";
-
     /**
      * Thread-safe map of pending raster bitmaps awaiting texture upload.
      * Written by the async raster fetch thread, consumed by the GL render
@@ -272,26 +269,6 @@ public class TerrainTileLayer extends TileLayer {
     public static TextureItem getTerrainVectorTexture(MapTile tile) {
         TerrainTexData data = (TerrainTexData) tile.getData(TERRAIN_VECTOR_TEX);
         return data != null ? data.texture : null;
-    }
-
-    /**
-     * Retrieves the road {@link ExtrusionBuckets} stored on a map tile.
-     *
-     * @param tile the map tile
-     * @return the road ExtrusionBuckets, or null if not present
-     */
-    public static ExtrusionBuckets getRoadBuckets(MapTile tile) {
-        return (ExtrusionBuckets) tile.getData(TERRAIN_ROAD);
-    }
-
-    /**
-     * Stores road {@link ExtrusionBuckets} on a map tile for road mesh rendering.
-     *
-     * @param tile    the map tile
-     * @param buckets the extrusion buckets containing the road mesh
-     */
-    public static void setRoadBuckets(MapTile tile, ExtrusionBuckets buckets) {
-        tile.addData(TERRAIN_ROAD, buckets);
     }
 
     // ─────────────────────────────────────────────

@@ -82,12 +82,13 @@ public class TerrainTileLoader extends TileLoader {
             ExtrusionBuckets ebs = new ExtrusionBuckets(mTile);
             ebs.resetBuckets(bucket);
 
-            // Store on the tile's data chain
-            TerrainTileLayer.setTerrainBuckets(mTile, ebs);
-
             // Generate 3D road meshes from the vector tile source (synchronous —
-            // the query is fast and avoids threading complexity).
+            // the query is fast and avoids threading complexity). Must run BEFORE
+            // setTerrainBuckets so the GL thread never sees a partially-built chain.
             generateRoadMeshes(mTile, ebs, groundScale);
+
+            // Store on the tile's data chain (only after all buckets are added)
+            TerrainTileLayer.setTerrainBuckets(mTile, ebs);
 
             // Kick off async raster tile fetch for texture draping (if configured).
             TileSource rasterSource = mTileSource.getRasterSource();
