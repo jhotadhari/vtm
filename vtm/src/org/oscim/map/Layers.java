@@ -325,20 +325,49 @@ public final class Layers extends AbstractList<Layer> {
             }
 
             mLayerRenderer = new LayerRenderer[numRenderLayers];
+            int[] priorities = new int[numRenderLayers];
+            boolean needsSort = false;
 
             for (int i = 0, cnt = 0, n = mLayerList.size(); i < n; i++) {
                 Layer o = mLayerList.get(i);
                 LayerRenderer l = o.getRenderer();
-                if (o.isEnabled() && l != null)
-                    mLayerRenderer[cnt++] = l;
+                if (o.isEnabled() && l != null) {
+                    mLayerRenderer[cnt] = l;
+                    int prio = o.getRenderPriority();
+                    priorities[cnt] = prio;
+                    if (prio != 0) needsSort = true;
+                    cnt++;
+                }
 
                 if (o instanceof GroupLayer) {
                     GroupLayer groupLayer = (GroupLayer) o;
                     for (Layer gl : groupLayer.layers) {
                         l = gl.getRenderer();
-                        if (gl.isEnabled() && l != null)
-                            mLayerRenderer[cnt++] = l;
+                        if (gl.isEnabled() && l != null) {
+                            mLayerRenderer[cnt] = l;
+                            int prio = gl.getRenderPriority();
+                            priorities[cnt] = prio;
+                            if (prio != 0) needsSort = true;
+                            cnt++;
+                        }
                     }
+                }
+            }
+
+            // Stable sort by render priority (lower = rendered first).
+            // Insertion sort preserves insertion order for equal priorities.
+            if (needsSort) {
+                for (int i = 1; i < numRenderLayers; i++) {
+                    int keyPrio = priorities[i];
+                    LayerRenderer keyRenderer = mLayerRenderer[i];
+                    int j = i - 1;
+                    while (j >= 0 && priorities[j] > keyPrio) {
+                        priorities[j + 1] = priorities[j];
+                        mLayerRenderer[j + 1] = mLayerRenderer[j];
+                        j--;
+                    }
+                    priorities[j + 1] = keyPrio;
+                    mLayerRenderer[j + 1] = keyRenderer;
                 }
             }
 

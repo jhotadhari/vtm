@@ -5,6 +5,7 @@ dependencies {
     implementation project(':vtm-android-mvt')
     implementation project(':vtm-extras')
     implementation project(':vtm-hillshading')
+    implementation project(':vtm-terrain')
     implementation project(':vtm-http')
     //implementation project(':vtm-jeo')
     implementation project(':vtm-json')

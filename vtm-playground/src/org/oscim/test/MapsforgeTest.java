@@ -220,7 +220,10 @@ public class MapsforgeTest extends GdxMapApp {
         }
 
         mTerrainLayer = new TerrainTileLayer(mMap, terrainSource);
-        mMap.layers().add(2, mTerrainLayer);
+        // TerrainTileLayer.getRenderPriority() = RENDER_PRIORITY_TERRAIN (0x200)
+        // ensures terrain renders after base map and before buildings regardless
+        // of insertion order.
+        mMap.layers().add(mTerrainLayer);
 
         // Sync building renderer: when terrain is present, buildings test against terrain depth
         if (mBuildingLayer != null) {

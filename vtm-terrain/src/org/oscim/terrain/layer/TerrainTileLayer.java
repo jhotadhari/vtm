@@ -102,6 +102,15 @@ public class TerrainTileLayer extends TileLayer {
     }
 
     /**
+     * Terrain renders after the base map (0x100) and before buildings (0x300)
+     * so that extrusion layers can depth-test against the terrain mesh.
+     */
+    @Override
+    public int getRenderPriority() {
+        return RENDER_PRIORITY_TERRAIN;
+    }
+
+    /**
      * Returns the terrain tile source.
      */
     public TerrainTileSource getTerrainSource() {

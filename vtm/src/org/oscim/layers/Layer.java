@@ -23,6 +23,18 @@ import org.oscim.renderer.LayerRenderer;
 
 public abstract class Layer {
 
+    /**
+     * Priority tiers for rendering order. Lower values are rendered first.
+     * <p>
+     * Override {@link #getRenderPriority()} to place a layer between standard tiers.
+     * Default priority is 0 (unspecified — insertion order is preserved among layers
+     * with the same priority via stable sort).
+     */
+    public static final int RENDER_PRIORITY_BASE = 0x100;
+    public static final int RENDER_PRIORITY_TERRAIN = 0x200;
+    public static final int RENDER_PRIORITY_BUILDING = 0x300;
+    public static final int RENDER_PRIORITY_LABEL = 0x400;
+
     public Layer(Map map) {
         mMap = map;
     }
@@ -35,6 +47,21 @@ public abstract class Layer {
 
     public LayerRenderer getRenderer() {
         return mRenderer;
+    }
+
+    /**
+     * Returns the rendering priority for this layer. Layers with lower priority
+     * values are rendered first. Default is 0 (unspecified — layers with the same
+     * priority preserve their insertion order).
+     * <p>
+     * Use the {@code RENDER_PRIORITY_*} constants for standard tiers:
+     * {@link #RENDER_PRIORITY_BASE} (0x100),
+     * {@link #RENDER_PRIORITY_TERRAIN} (0x200),
+     * {@link #RENDER_PRIORITY_BUILDING} (0x300),
+     * {@link #RENDER_PRIORITY_LABEL} (0x400).
+     */
+    public int getRenderPriority() {
+        return 0;
     }
 
     /**

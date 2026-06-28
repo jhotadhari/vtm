@@ -89,6 +89,7 @@ public class Samples extends Activity {
         linearLayout.addView(createLabel(null));
         linearLayout.addView(createButton(LocationTextureActivity.class));
         linearLayout.addView(createButton(HillshadingActivity.class));
+        linearLayout.addView(createButton(TerrainActivity.class));
         linearLayout.addView(createButton(PoiSearchActivity.class));
         linearLayout.addView(createButton(MapsforgeStyleActivity.class));
         linearLayout.addView(createButton(MapsforgeS3DBActivity.class));

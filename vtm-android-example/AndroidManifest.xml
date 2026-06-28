@@ -54,6 +54,9 @@
         <activity
             android:name=".HillshadingActivity"
             android:configChanges="keyboardHidden|orientation|screenSize" />
+        <activity
+            android:name=".TerrainActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize" />
         <!--<activity
             android:name=".JeoIndoorActivity"
             android:configChanges="keyboardHidden|orientation|screenSize" />-->
