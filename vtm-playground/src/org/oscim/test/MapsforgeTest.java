@@ -244,13 +244,13 @@ public class MapsforgeTest extends GdxMapApp {
         }
         if (keycode == Input.Keys.F9) {
             // Decrease exaggeration
-            mExaggeration = Math.max(1, mExaggeration - 50);
+            mExaggeration = Math.max(1, mExaggeration - 5);
             addTerrainLayer();
             return true;
         }
         if (keycode == Input.Keys.F10) {
             // Increase exaggeration
-            mExaggeration += 50;
+            mExaggeration += 5;
             addTerrainLayer();
             return true;
         }
