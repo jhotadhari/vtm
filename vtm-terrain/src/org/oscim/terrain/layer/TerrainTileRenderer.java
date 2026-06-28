@@ -30,6 +30,8 @@ import org.oscim.renderer.light.Sun;
 import org.oscim.terrain.TerrainUtils;
 import org.oscim.utils.FastMath;
 
+import java.util.logging.Logger;
+
 import static org.oscim.backend.GLAdapter.gl;
 import static org.oscim.renderer.MapRenderer.COORD_SCALE;
 
@@ -44,6 +46,8 @@ import static org.oscim.renderer.MapRenderer.COORD_SCALE;
  * (VBO/IBO upload) in {@link #update} and draws them in {@link #render}.
  */
 public class TerrainTileRenderer extends TileRenderer {
+
+    private static final Logger log = Logger.getLogger(TerrainTileRenderer.class.getName());
 
     /** Light source position for terrain shading. */
     private final Sun mSun;
@@ -96,7 +100,7 @@ public class TerrainTileRenderer extends TileRenderer {
             // Compile if not already done (one tile per frame max)
             if (!ebs.compiled) {
                 if (!ebs.compile()) {
-                    System.err.println("TERRAIN: compile failed tile " + tile);
+                    log.warning("TERRAIN: compile failed tile " + tile);
                     continue;
                 }
             }
@@ -105,7 +109,7 @@ public class TerrainTileRenderer extends TileRenderer {
         }
         mTerrainCnt = cnt;
         if (cnt > 0 && cnt != mLastLogCnt) {
-            System.out.println("TERRAIN: rendering " + cnt + " tiles");
+            log.fine("TERRAIN: rendering " + cnt + " tiles");
             mLastLogCnt = cnt;
         }
     }
@@ -120,12 +124,12 @@ public class TerrainTileRenderer extends TileRenderer {
             if (!mInitialized) {
                 mShader = new ExtrusionRenderer.Shader("extrusion_layer_mesh");
                 if (mShader.getProgram() <= 0) {
-                    System.err.println("TERRAIN: shader init failed, program=" + mShader.getProgram());
+                    log.severe("TERRAIN: shader init failed, program=" + mShader.getProgram());
                     mInitialized = true;
                     return;
                 }
                 mInitialized = true;
-                System.out.println("TERRAIN: shader initialized, program=" + mShader.getProgram());
+                log.info("TERRAIN: shader initialized, program=" + mShader.getProgram());
             }
 
             // Depth buffer setup: terrain is the first 3D layer
@@ -187,7 +191,7 @@ public class TerrainTileRenderer extends TileRenderer {
             if (v.pos.zoomLevel < 18)
                 gl.disable(GL.CULL_FACE);
         } catch (Throwable t) {
-            System.err.println("TERRAIN: render error: " + t);
+            log.severe("TERRAIN: render error: " + t);
             t.printStackTrace();
             mTerrainCnt = 0; // skip future renders
         }

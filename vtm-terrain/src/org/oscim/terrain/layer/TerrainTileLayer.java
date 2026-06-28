@@ -23,6 +23,8 @@ import org.oscim.renderer.bucket.ExtrusionBuckets;
 import org.oscim.terrain.tiling.TerrainTileLoader;
 import org.oscim.terrain.tiling.TerrainTileSource;
 
+import java.util.logging.Logger;
+
 /**
  * Tile layer for 3D terrain mesh rendering. Manages the tile loading pipeline
  * for terrain meshes generated from HGT elevation data.
@@ -41,6 +43,8 @@ import org.oscim.terrain.tiling.TerrainTileSource;
  * }</pre>
  */
 public class TerrainTileLayer extends TileLayer {
+
+    private static final Logger log = Logger.getLogger(TerrainTileLayer.class.getName());
 
     private static final int CACHE_LIMIT = 30;
 
@@ -64,7 +68,7 @@ public class TerrainTileLayer extends TileLayer {
                 tileSource.getZoomLevelMax());
 
         initLoader(getNumLoaders());
-        System.out.println("TERRAIN: layer created, zoom range "
+        log.info("TERRAIN: layer created, zoom range "
                 + tileSource.getZoomLevelMin() + "-" + tileSource.getZoomLevelMax());
     }
 

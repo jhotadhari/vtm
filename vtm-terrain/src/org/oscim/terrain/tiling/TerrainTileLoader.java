@@ -24,6 +24,8 @@ import org.oscim.terrain.layer.TerrainTileLayer;
 import org.oscim.tiling.ITileDataSource;
 import org.oscim.tiling.QueryResult;
 
+import java.util.logging.Logger;
+
 /**
  * Tile loader that receives terrain mesh data from
  * {@link TerrainTileDataSource} and creates {@link ExtrusionBuckets}
@@ -34,6 +36,8 @@ import org.oscim.tiling.QueryResult;
  * tile's data chain via {@link TerrainTileLayer#setTerrainBuckets}.
  */
 public class TerrainTileLoader extends TileLoader {
+
+    private static final Logger log = Logger.getLogger(TerrainTileLoader.class.getName());
 
     private final TerrainTileSource mTileSource;
     private final ITileDataSource mTileDataSource;
@@ -53,11 +57,11 @@ public class TerrainTileLoader extends TileLoader {
     @Override
     protected boolean loadTile(MapTile tile) {
         try {
-            System.out.println("TERRAIN: loadTile " + tile);
+            log.fine("TERRAIN: loadTile " + tile);
             mMesh = null;
             mTileDataSource.query(tile, this);
         } catch (Exception e) {
-            System.err.println("TERRAIN: loadTile error " + tile + ": " + e);
+            log.warning("TERRAIN: loadTile error " + tile + ": " + e);
         }
         return true;
     }

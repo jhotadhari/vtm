@@ -63,14 +63,14 @@ public class TerrainTileDataSource implements ITileDataSource {
         // Out of zoom bounds
         if (zoomLevel > mTileSource.getZoomLevelMax()
                 || zoomLevel < mTileSource.getZoomLevelMin()) {
-            System.out.println("TERRAIN: zoom out of bounds " + tile);
+            log.fine("TERRAIN: zoom out of bounds " + tile);
             sink.completed(QueryResult.SUCCESS);
             return;
         }
 
         try {
             if (tile.mapSize <= 0) {
-                System.err.println("TERRAIN: mapSize=0 for " + tile);
+                log.warning("TERRAIN: mapSize=0 for " + tile);
                 sink.completed(QueryResult.FAILED);
                 return;
             }
@@ -99,12 +99,12 @@ public class TerrainTileDataSource implements ITileDataSource {
 
             // Check if tile is entirely ocean
             if (TerrainUtils.isOceanTile(sampler, bottomLat, topLat, leftLon, rightLon)) {
-                System.out.println("TERRAIN: ocean tile " + tile);
+                log.finer("TERRAIN: ocean tile " + tile);
                 sink.completed(QueryResult.SUCCESS);
                 return;
             }
 
-            System.out.println("TERRAIN: generating mesh for " + tile);
+            log.fine("TERRAIN: generating mesh for " + tile);
 
             // Generate terrain mesh
             GeometryBuffer mesh = TerrainUtils.generateTerrainMesh(
@@ -127,7 +127,7 @@ public class TerrainTileDataSource implements ITileDataSource {
                 sink.completed(QueryResult.FAILED);
             }
         } catch (Throwable t) {
-            System.err.println("TERRAIN: mesh gen failed for " + tile + ": " + t);
+            log.severe("TERRAIN: mesh gen failed for " + tile + ": " + t);
             t.printStackTrace();
             sink.completed(QueryResult.FAILED);
         }

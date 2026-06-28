@@ -56,6 +56,21 @@ public abstract class ExtrusionRenderer extends LayerRenderer {
      */
     protected boolean mClearDepth = true;
 
+    /**
+     * Sets whether this renderer should clear the depth buffer before rendering.
+     * Default is {@code true}. Set to {@code false} for building layers that
+     * render after a terrain layer, so they test against the terrain depth
+     * instead of overwriting it.
+     */
+    public void setClearDepth(boolean clearDepth) {
+        mClearDepth = clearDepth;
+    }
+
+    /** Returns whether this renderer clears the depth buffer before rendering. */
+    public boolean getClearDepth() {
+        return mClearDepth;
+    }
+
     public ExtrusionRenderer(boolean mesh, boolean translucent) {
         mMesh = mesh;
         mTranslucent = translucent;

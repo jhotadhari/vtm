@@ -64,6 +64,7 @@ public class MapsforgeTest extends GdxMapApp {
     private TerrainTileLayer mTerrainLayer;
     private BitmapTileLayer mHillshadeLayer;
     private VectorTileLayer mBaseLayer;
+    private BuildingLayer mBuildingLayer;
     private boolean mTerrainVisible = true;
     private boolean mHillshadeVisible = true;
     private boolean mBaseVisible = true;
@@ -119,7 +120,14 @@ public class MapsforgeTest extends GdxMapApp {
         BuildingLayer buildingLayer = null;
         if (mBaseLayer != null) {
             buildingLayer = s3db ? new S3DBLayer(mMap, mBaseLayer, SHADOWS) : new BuildingLayer(mMap, mBaseLayer, false, SHADOWS);
+            mBuildingLayer = buildingLayer;
             mMap.layers().add(buildingLayer);
+
+            // When terrain is active, set building renderer to test against terrain depth
+            // instead of clearing it (terrain layer clears depth first)
+            if (mTerrainLayer != null) {
+                buildingLayer.getExtrusionRenderer().setClearDepth(false);
+            }
 
             if (poi3d)
                 mMap.layers().add(new Poi3DLayer(mMap, mBaseLayer));
@@ -222,6 +230,10 @@ public class MapsforgeTest extends GdxMapApp {
             mTerrainVisible = !mTerrainVisible;
             if (mTerrainLayer != null)
                 mTerrainLayer.setEnabled(mTerrainVisible);
+            // Sync building renderer: when terrain is hidden, restore depth clearing
+            if (mBuildingLayer != null) {
+                mBuildingLayer.getExtrusionRenderer().setClearDepth(!mTerrainVisible);
+            }
             mMap.updateMap(true);
             System.out.println("Terrain: " + (mTerrainVisible ? "ON" : "OFF"));
             return true;
