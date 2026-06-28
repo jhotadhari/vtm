@@ -60,7 +60,7 @@ public class TerrainTileDataSource implements ITileDataSource {
     public TerrainTileDataSource(TerrainTileSource tileSource) {
         mTileSource = tileSource;
         mProjection = tileSource.getProjection();
-        mElevationAPI = new ElevationAPI(tileSource.getDemFolder());
+        mElevationAPI = tileSource.getElevationAPI(); // shared instance
     }
 
     @Override

@@ -109,6 +109,14 @@ public class TextureBucket extends RenderBucket {
 
     public static final class Renderer {
 
+        /**
+         * Enables GL depth test for texture-bucket rendering.
+         * Set to true when rendering after a terrain layer so that
+         * labels/symbols behind hills are correctly occluded.
+         * Reset to false after the render pass.
+         */
+        public static boolean depthTest = false;
+
         static void init() {
             shader = new Shader();
 
@@ -118,7 +126,7 @@ public class TextureBucket extends RenderBucket {
 
         public static RenderBucket draw(RenderBucket b, GLViewport v, float scale) {
 
-            GLState.test(false, false);
+            GLState.test(depthTest, false);
             GLState.blend(true);
 
             shader.useProgram();

@@ -22,6 +22,7 @@ package org.oscim.layers.tile.buildings;
 import org.oscim.backend.CanvasAdapter;
 import org.oscim.backend.Platform;
 import org.oscim.core.MapElement;
+import org.oscim.core.MercatorProjection;
 import org.oscim.core.Tag;
 import org.oscim.layers.Layer;
 import org.oscim.layers.tile.MapTile;
@@ -35,6 +36,7 @@ import org.oscim.renderer.OffscreenRenderer.Mode;
 import org.oscim.renderer.bucket.ExtrusionBuckets;
 import org.oscim.renderer.bucket.RenderBuckets;
 import org.oscim.renderer.light.ShadowRenderer;
+import org.oscim.terrain.ElevationProvider;
 import org.oscim.theme.styles.ExtrusionStyle;
 import org.oscim.theme.styles.RenderStyle;
 import org.oscim.utils.geom.GeometryUtils;
@@ -200,6 +202,37 @@ public class BuildingLayer extends Layer implements TileLoaderThemeHook, ZoomLim
             String v = getValue(element, Tag.KEY_BUILDING_MIN_LEVEL);
             if (v != null)
                 minHeight = (int) (Float.parseFloat(v) * BUILDING_LEVEL_HEIGHT);
+        }
+
+        // If building is on the ground (no explicit minHeight), anchor it to
+        // the terrain surface by sampling elevation at the building centroid.
+        if (minHeight == 0 && ElevationProvider.isAvailable()) {
+            ElevationProvider.Sampler sampler = ElevationProvider.getSampler();
+            try {
+                float[] points = element.points;
+                int n = element.pointNextPos;
+                if (n >= 6) { // at least one triangle (3 points × 2 coords)
+                    float cx = 0, cy = 0;
+                    for (int i = 0; i < n; i += 2) {
+                        cx += points[i];
+                        cy += points[i + 1];
+                    }
+                    cx /= (n / 2);
+                    cy /= (n / 2);
+
+                    double lon = MercatorProjection.pixelXToLongitude(
+                            tile.getOrigin().x + cx, tile.mapSize);
+                    double lat = MercatorProjection.pixelYToLatitude(
+                            tile.getOrigin().y + cy, tile.mapSize);
+
+                    float terrainMeters = sampler.getElevation((float) lat, (float) lon);
+                    if (!Float.isNaN(terrainMeters)) {
+                        minHeight = Math.round(terrainMeters * 100); // m → cm
+                    }
+                }
+            } catch (Exception ignored) {
+                // Terrain adjustment is best-effort; silently fall through
+            }
         }
 
         if (height == 0)

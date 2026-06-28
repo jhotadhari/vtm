@@ -14,7 +14,9 @@
  */
 package org.oscim.terrain.layer;
 
+import org.mapsforge.map.elevation.ElevationAPI;
 import org.oscim.backend.canvas.Bitmap;
+import org.oscim.core.MercatorProjection;
 import org.oscim.layers.tile.MapTile;
 import org.oscim.layers.tile.MapTile.TileData;
 import org.oscim.layers.tile.TileLayer;
@@ -23,8 +25,11 @@ import org.oscim.layers.tile.TileManager;
 import org.oscim.map.Map;
 import org.oscim.renderer.bucket.ExtrusionBuckets;
 import org.oscim.renderer.bucket.TextureItem;
+import org.oscim.terrain.ElevationProvider;
+import org.oscim.terrain.projection.TerrainProjection;
 import org.oscim.terrain.tiling.TerrainTileLoader;
 import org.oscim.terrain.tiling.TerrainTileSource;
+import org.oscim.utils.ExtrusionUtils;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -67,6 +72,15 @@ public class TerrainTileLayer extends TileLayer {
             new ConcurrentHashMap<>();
 
     /**
+     * Shared elevation query context. Set when the first TerrainTileLayer
+     * is created, and used by building/label/road layers to sample terrain
+     * height at arbitrary positions.
+     */
+    private static ElevationAPI sElevationAPI;
+    private static TerrainProjection sProjection;
+    private static float sBaseElevation;
+
+    /**
      * Minimal TileData wrapper for storing a TextureItem on a MapTile.
      */
     private static class TerrainTexData extends TileData {
@@ -102,6 +116,9 @@ public class TerrainTileLayer extends TileLayer {
                 tileSource.getZoomLevelMax());
 
         initLoader(getNumLoaders());
+
+        // Register shared elevation query context for use by other layers
+        setElevationContext(tileSource);
         log.info("TERRAIN: layer created, zoom range "
                 + tileSource.getZoomLevelMin() + "-" + tileSource.getZoomLevelMax());
     }
@@ -217,5 +234,78 @@ public class TerrainTileLayer extends TileLayer {
             TextureItem tex = new TextureItem(bitmap);
             tile.addData(TERRAIN_TEX, new TerrainTexData(tex));
         }
+    }
+
+    // ─────────────────────────────────────────────
+    // Elevation query API — for use by other layers
+    // ─────────────────────────────────────────────
+
+    /**
+     * Registers the shared elevation query context. Called automatically
+     * during {@link TerrainTileLayer} construction. Other layers (buildings,
+     * labels, roads) use {@link #getElevation} to sample terrain height.
+     */
+    private static void setElevationContext(TerrainTileSource source) {
+        sElevationAPI = source.getElevationAPI();
+        sProjection = source.getProjection();
+        sBaseElevation = source.getBaseElevation();
+
+        // Also register as the global ElevationProvider for layers in the
+        // vtm module that can't import vtm-terrain directly.
+        ElevationProvider.set(new ElevationProvider.Sampler() {
+            @Override
+            public float getElevation(float lat, float lon) {
+                return TerrainTileLayer.getElevation(lat, lon);
+            }
+
+            @Override
+            public float metersToTileZ(float meters, double lat, double scale) {
+                return TerrainTileLayer.metersToTileZ(meters, lat, scale);
+            }
+        });
+    }
+
+    /**
+     * Returns true if the terrain elevation query API is available.
+     */
+    public static boolean hasElevationData() {
+        return sElevationAPI != null;
+    }
+
+    /**
+     * Returns the terrain elevation in meters (base-offset already applied)
+     * at the given geographic position, or {@link Float#NaN} if no data
+     * is available.
+     * <p>
+     * Thread-safe: delegates to mapsforge's {@link ElevationAPI}.
+     *
+     * @param lat latitude in degrees
+     * @param lon longitude in degrees
+     * @return elevation in meters, or NaN if no data
+     */
+    public static float getElevation(float lat, float lon) {
+        if (sElevationAPI == null)
+            return Float.NaN;
+        double e = sElevationAPI.getElevation(lat, lon);
+        if (!ElevationAPI.isValid(e))
+            return Float.NaN;
+        return (float) e - sBaseElevation;
+    }
+
+    /**
+     * Converts an elevation in meters to tile-local Z units for use in
+     * vertex buffers. Uses the same scaling as the terrain mesh generator
+     * ({@link ExtrusionUtils#mapGroundScale}).
+     *
+     * @param meters elevation in meters
+     * @param lat    latitude for ground resolution calculation
+     * @param scale  tile scale (1 << zoomLevel)
+     * @return tile-local Z value in 10cm units
+     */
+    public static float metersToTileZ(float meters, double lat, double scale) {
+        if (meters == Short.MIN_VALUE)
+            return 0f;
+        float groundScale = (float) MercatorProjection.groundResolutionWithScale(lat, scale);
+        return ExtrusionUtils.mapGroundScale(meters, groundScale);
     }
 }

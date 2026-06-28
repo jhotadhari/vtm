@@ -36,6 +36,7 @@ import org.oscim.renderer.GLState;
 import org.oscim.renderer.GLViewport;
 import org.oscim.renderer.bucket.RenderBucket;
 import org.oscim.renderer.bucket.TextureBucket;
+import org.oscim.terrain.ElevationProvider;
 
 class TextRenderer extends BucketRenderer {
     static final boolean dbg = false;
@@ -71,8 +72,11 @@ class TextRenderer extends BucketRenderer {
 
     @Override
     public synchronized void render(GLViewport v) {
-        GLState.test(false, false);
-        //Debug.draw(pos, layers);
+        // Enable depth test when terrain is active so labels and symbols
+        // that fall behind hills are correctly occluded by the terrain mesh.
+        boolean terrainActive = ElevationProvider.isAvailable();
+        TextureBucket.Renderer.depthTest = terrainActive;
+        GLState.test(terrainActive, false);
 
         buckets.vbo.bind();
 
@@ -82,6 +86,9 @@ class TextRenderer extends BucketRenderer {
 
         for (RenderBucket l = buckets.get(); l != null; )
             l = TextureBucket.Renderer.draw(l, v, scale);
+
+        // Restore default
+        TextureBucket.Renderer.depthTest = false;
     }
 
 }

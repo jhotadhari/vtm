@@ -14,6 +14,7 @@
  */
 package org.oscim.terrain.tiling;
 
+import org.mapsforge.map.elevation.ElevationAPI;
 import org.mapsforge.map.layer.hills.DemFolder;
 import org.oscim.backend.canvas.Color;
 import org.oscim.map.Viewport;
@@ -56,6 +57,9 @@ public class TerrainTileSource extends TileSource {
 
     /** Blend factor between procedural color and texture (0=color only, 1=texture only). */
     private float mTexMix = 0.8f;
+
+    /** Shared ElevationAPI for on-demand elevation queries (created lazily). */
+    private ElevationAPI mElevationAPI;
 
     /**
      * Creates a terrain tile source with default Mercator projection.
@@ -138,6 +142,22 @@ public class TerrainTileSource extends TileSource {
     /** Returns the texture blend factor. */
     public float getTexMix() {
         return mTexMix;
+    }
+
+    /**
+     * Returns the shared {@link ElevationAPI} for on-demand elevation queries.
+     * Created lazily on first access. The same instance is shared across all
+     * {@link TerrainTileDataSource} instances created by this source.
+     */
+    public ElevationAPI getElevationAPI() {
+        if (mElevationAPI == null) {
+            synchronized (this) {
+                if (mElevationAPI == null) {
+                    mElevationAPI = new ElevationAPI(mDemFolder);
+                }
+            }
+        }
+        return mElevationAPI;
     }
 
     @Override
