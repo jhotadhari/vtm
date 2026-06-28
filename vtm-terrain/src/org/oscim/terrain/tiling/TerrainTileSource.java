@@ -41,6 +41,7 @@ public class TerrainTileSource extends TileSource {
     private final DemFolder mDemFolder;
     private final TerrainProjection mProjection;
     private float mElevationExaggeration = 5.0f;
+    private float mBaseElevation = 3800f; // Andes plateau baseline in meters
     private int mTerrainColor = Color.get(180, 160, 140, 255);
 
     /**
@@ -88,6 +89,17 @@ public class TerrainTileSource extends TileSource {
     /** Returns the terrain mesh color. */
     public int getTerrainColor() {
         return mTerrainColor;
+    }
+
+    /** Sets the base elevation subtracted from all heights (meters). Default 3800m for Andes. */
+    public TerrainTileSource setBaseElevation(float meters) {
+        mBaseElevation = meters;
+        return this;
+    }
+
+    /** Returns the base elevation offset in meters. */
+    public float getBaseElevation() {
+        return mBaseElevation;
     }
 
     @Override

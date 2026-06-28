@@ -89,10 +89,12 @@ public class TerrainTileDataSource implements ITileDataSource {
             double bottomLat = MercatorProjection.pixelYToLatitude(origin.y + Tile.SIZE, mapSize);
 
             // Check if tile is entirely ocean
-            // Shared elevation sampler
+            // Shared elevation sampler with base offset
+            final float baseElev = mTileSource.getBaseElevation();
             TerrainUtils.ElevationSampler sampler = (lat, lon) -> {
                 double e = mElevationAPI.getElevation(lat, lon);
-                return ElevationAPI.isValid(e) ? (float) e : Short.MIN_VALUE;
+                if (!ElevationAPI.isValid(e)) return Short.MIN_VALUE;
+                return (float) e - baseElev;
             };
 
             // Check if tile is entirely ocean

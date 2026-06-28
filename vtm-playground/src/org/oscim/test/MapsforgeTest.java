@@ -67,7 +67,8 @@ public class MapsforgeTest extends GdxMapApp {
     private boolean mTerrainVisible = true;
     private boolean mHillshadeVisible = true;
     private boolean mBaseVisible = true;
-    private float mExaggeration = 100.0f;
+    private float mExaggeration = 5.0f;
+    private float mBaseElevation = 3800f;
     private DemFolderFS mDemFolderRef; // kept for layer recreation
 
     MapsforgeTest(File demFolder, List<File> mapFiles, File themeFile) {
@@ -193,6 +194,7 @@ public class MapsforgeTest extends GdxMapApp {
                 Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL,
                 mDemFolderRef)
                 .setElevationExaggeration(mExaggeration)
+                .setBaseElevation(mBaseElevation)
                 .setTerrainColor(Color.get(220, 80, 60, 255));
         mTerrainLayer = new TerrainTileLayer(mMap, terrainSource);
         mMap.layers().add(2, mTerrainLayer);
@@ -251,6 +253,18 @@ public class MapsforgeTest extends GdxMapApp {
         if (keycode == Input.Keys.F10) {
             // Increase exaggeration
             mExaggeration += 5;
+            addTerrainLayer();
+            return true;
+        }
+        if (keycode == Input.Keys.F11) {
+            // Decrease base elevation (lowers terrain toward map)
+            mBaseElevation = Math.max(0, mBaseElevation - 500);
+            addTerrainLayer();
+            return true;
+        }
+        if (keycode == Input.Keys.F12) {
+            // Increase base elevation (lifts terrain above map)
+            mBaseElevation += 500;
             addTerrainLayer();
             return true;
         }
