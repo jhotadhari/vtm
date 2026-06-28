@@ -109,26 +109,35 @@ public final class TerrainUtils {
         double latRange = latMax - latMin;
         double lonRange = lonMax - lonMin;
 
-        // Build vertex array
+        // First pass: sample elevations, find minimum (ignoring no-data)
+        float[] rawElev = new float[vertexCount];
+        float elevMin = Float.MAX_VALUE;
         for (int j = 0; j < N; j++) {
-            // Geographic lat: interpolate from top to bottom (j=0 → latMax, j=N-1 → latMin)
             double lat = latMax - (j / (double) (N - 1)) * latRange;
-
             for (int i = 0; i < N; i++) {
-                // Geographic lon: interpolate from left to right (i=0 → lonMin, i=N-1 → lonMax)
                 double lon = lonMin + (i / (double) (N - 1)) * lonRange;
+                float elev = elevationSampler.getElevation((float) lat, (float) lon);
+                if (elev == Short.MIN_VALUE) elev = 0f;
+                rawElev[j * N + i] = elev;
+                if (elev < elevMin) elevMin = elev;
+            }
+        }
+        if (elevMin == Float.MAX_VALUE) elevMin = 0f;
 
-                // Tile-local x, y
+        // Second pass: build vertices, subtracting base elevation so terrain sits on map
+        for (int j = 0; j < N; j++) {
+            for (int i = 0; i < N; i++) {
                 float tx = i * step;
                 float ty = j * step;
 
-                // Query elevation
-                float elevMeters = elevationSampler.getElevation((float) lat, (float) lon);
+                // Subtract base elevation so lowest point is at z=0
+                float elevMeters = rawElev[j * N + i] - elevMin;
 
-                // Convert elevation to tile-local z with exaggeration
-                float tz = projection.elevToTileZ(elevMeters * exaggeration, lat, tileScale);
+                // Convert to tile-local z with exaggeration
+                float tz = projection.elevToTileZ(elevMeters * exaggeration,
+                        latMax - (j / (double) (N - 1)) * latRange,
+                        tileScale);
 
-                // Store vertex
                 int vIdx = (j * N + i) * 3;
                 points[vIdx + 0] = tx;
                 points[vIdx + 1] = ty;
