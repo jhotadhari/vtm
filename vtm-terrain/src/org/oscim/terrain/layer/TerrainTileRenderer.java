@@ -115,79 +115,82 @@ public class TerrainTileRenderer extends TileRenderer {
         if (mTerrainCnt == 0)
             return;
 
-        // Lazy-init shader
-        if (!mInitialized) {
-            mShader = new ExtrusionRenderer.Shader("extrusion_layer_mesh");
-            if (mShader.getProgram() <= 0) {
-                System.err.println("TERRAIN: shader init failed");
+        try {
+            // Lazy-init shader
+            if (!mInitialized) {
+                mShader = new ExtrusionRenderer.Shader("extrusion_layer_mesh");
+                if (mShader.getProgram() <= 0) {
+                    System.err.println("TERRAIN: shader init failed, program=" + mShader.getProgram());
+                    mInitialized = true;
+                    return;
+                }
                 mInitialized = true;
-                return;
+                System.out.println("TERRAIN: shader initialized, program=" + mShader.getProgram());
             }
-            mInitialized = true;
-        }
 
-        // Depth buffer setup: terrain is the first 3D layer
-        gl.depthMask(true);
-        gl.clear(GL.DEPTH_BUFFER_BIT);
+            // Depth buffer setup: terrain is the first 3D layer
+            gl.depthMask(true);
+            gl.clear(GL.DEPTH_BUFFER_BIT);
 
-        GLState.test(true, false);
+            GLState.test(true, false);
 
-        ExtrusionRenderer.Shader s = mShader;
-        s.useProgram();
-        GLState.enableVertexArrays(s.aPos, GLState.DISABLED);
+            ExtrusionRenderer.Shader s = mShader;
+            s.useProgram();
+            GLState.enableVertexArrays(s.aPos, GLState.DISABLED);
 
-        // Face culling at moderate zoom
-        if (v.pos.zoomLevel < 18)
-            gl.enable(GL.CULL_FACE);
+            // Face culling at moderate zoom
+            if (v.pos.zoomLevel < 18)
+                gl.enable(GL.CULL_FACE);
 
-        gl.depthFunc(GL.LESS);
-        gl.uniform1f(s.uAlpha, 1.0f);
-        gl.uniform1f(s.uZLimit, Float.MAX_VALUE);
-        GLUtils.glUniform3fv(s.uLight, 1, mSun.getPosition());
+            gl.depthFunc(GL.LESS);
+            gl.uniform1f(s.uAlpha, 1.0f);
+            gl.uniform1f(s.uZLimit, Float.MAX_VALUE);
+            GLUtils.glUniform3fv(s.uLight, 1, mSun.getPosition());
 
-        // Enable lighting
-        GLState.blend(true);
+            // Enable lighting
+            GLState.blend(true);
 
-        // Draw each terrain tile
-        for (int i = 0; i < mTerrainCnt; i++) {
-            ExtrusionBuckets ebs = mTerrainSet[i];
-            if (ebs.vbo == null)
-                continue;
+            // Draw each terrain tile
+            for (int i = 0; i < mTerrainCnt; i++) {
+                ExtrusionBuckets ebs = mTerrainSet[i];
+                if (ebs.vbo == null)
+                    continue;
 
-            ebs.vbo.bind();
-            ebs.ibo.bind();
+                ebs.vbo.bind();
+                ebs.ibo.bind();
 
-            setMatrix(s, v, ebs);
+                setMatrix(s, v, ebs);
 
-            // Iterate through extrusion buckets in this tile
-            for (ExtrusionBucket eb = ebs.buckets(); eb != null; eb = eb.next()) {
-                // Set color
-                GLUtils.glUniform4fv(s.uColor, 1, eb.getColors());
+                // Iterate through extrusion buckets in this tile
+                for (ExtrusionBucket eb = ebs.buckets(); eb != null; eb = eb.next()) {
+                    GLUtils.glUniform4fv(s.uColor, 1, eb.getColors());
 
-                // Set vertex position attribute (x,y,z as shorts)
-                gl.vertexAttribPointer(s.aPos, 3, GL.SHORT,
-                        false, RenderBuckets.SHORT_BYTES * 4,
-                        eb.getVertexOffset());
+                    gl.vertexAttribPointer(s.aPos, 3, GL.SHORT,
+                            false, RenderBuckets.SHORT_BYTES * 4,
+                            eb.getVertexOffset());
 
-                // Set normal attribute (packed as 2 unsigned bytes)
-                gl.vertexAttribPointer(s.aNormal, 2, GL.UNSIGNED_BYTE,
-                        false, RenderBuckets.SHORT_BYTES * 4,
-                        eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
+                    gl.vertexAttribPointer(s.aNormal, 2, GL.UNSIGNED_BYTE,
+                            false, RenderBuckets.SHORT_BYTES * 4,
+                            eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
 
-                // Draw mesh triangles (idx[4] = IND_MESH)
-                if (eb.idx[4] > 0) {
-                    gl.uniform1i(s.uMode, 0); // roof/mesh mode
-                    gl.drawElements(GL.TRIANGLES, eb.idx[4],
-                            GL.UNSIGNED_SHORT, eb.off[4]);
+                    if (eb.idx[4] > 0) {
+                        gl.uniform1i(s.uMode, 0);
+                        gl.drawElements(GL.TRIANGLES, eb.idx[4],
+                                GL.UNSIGNED_SHORT, eb.off[4]);
+                    }
                 }
             }
+
+            // Cleanup
+            gl.depthMask(false);
+
+            if (v.pos.zoomLevel < 18)
+                gl.disable(GL.CULL_FACE);
+        } catch (Throwable t) {
+            System.err.println("TERRAIN: render error: " + t);
+            t.printStackTrace();
+            mTerrainCnt = 0; // skip future renders
         }
-
-        // Cleanup
-        gl.depthMask(false);
-
-        if (v.pos.zoomLevel < 18)
-            gl.disable(GL.CULL_FACE);
     }
 
     /**
