@@ -15,11 +15,14 @@
 package org.oscim.terrain.tiling;
 
 import org.oscim.core.GeometryBuffer;
+import org.oscim.core.MapElement;
 import org.oscim.layers.tile.MapTile;
 import org.oscim.layers.tile.TileLoader;
 import org.oscim.renderer.bucket.ExtrusionBucket;
 import org.oscim.renderer.bucket.ExtrusionBuckets;
+import org.oscim.terrain.RoadTerrainMeshBuilder;
 import org.oscim.terrain.layer.TerrainTileLayer;
+import org.oscim.tiling.ITileDataSink;
 import org.oscim.tiling.ITileDataSource;
 import org.oscim.tiling.QueryResult;
 import org.oscim.tiling.TileSource;
@@ -82,6 +85,10 @@ public class TerrainTileLoader extends TileLoader {
             // Store on the tile's data chain
             TerrainTileLayer.setTerrainBuckets(mTile, ebs);
 
+            // Generate 3D road meshes from the vector tile source (synchronous —
+            // the query is fast and avoids threading complexity).
+            generateRoadMeshes(mTile, ebs, groundScale);
+
             // Kick off async raster tile fetch for texture draping (if configured).
             TileSource rasterSource = mTileSource.getRasterSource();
             if (rasterSource != null && mTileDataSource instanceof TerrainTileDataSource) {
@@ -97,6 +104,56 @@ public class TerrainTileLoader extends TileLoader {
             }
         }
         super.completed(result);
+    }
+
+    /**
+     * Queries the vector tile source for highway ways and generates 3D road
+     * meshes that follow the terrain surface.
+     */
+    private void generateRoadMeshes(MapTile tile, ExtrusionBuckets ebs, float groundScale) {
+        TileSource vectorSource = mTileSource.getVectorSource();
+        if (vectorSource == null)
+            return;
+
+        if (tile.zoomLevel > vectorSource.getZoomLevelMax()
+                || tile.zoomLevel < vectorSource.getZoomLevelMin()) {
+            return;
+        }
+
+        ITileDataSource ds = null;
+        try {
+            ds = vectorSource.getDataSource();
+            ds.query(tile, new ITileDataSink() {
+                @Override
+                public void process(MapElement element) {
+                    if (!RoadTerrainMeshBuilder.isMajorRoad(element))
+                        return;
+                    if (element.pointNextPos < 4)
+                        return;
+
+                    GeometryBuffer roadMesh = RoadTerrainMeshBuilder.buildRoadMesh(
+                            element, tile);
+                    if (roadMesh != null) {
+                        int color = RoadTerrainMeshBuilder.getRoadColor(element);
+                        if (color != 0) {
+                            ebs.addMeshElement(roadMesh, groundScale, color);
+                        }
+                    }
+                }
+
+                @Override
+                public void setTileImage(org.oscim.backend.canvas.Bitmap bitmap) {
+                }
+
+                @Override
+                public void completed(QueryResult result) {
+                }
+            });
+        } catch (Throwable t) {
+            log.fine("TERRAIN: road mesh generation failed for " + tile + ": " + t);
+        } finally {
+            if (ds != null) ds.dispose();
+        }
     }
 
     @Override
