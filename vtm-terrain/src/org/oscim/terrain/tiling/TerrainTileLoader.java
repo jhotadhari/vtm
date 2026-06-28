@@ -83,14 +83,17 @@ public class TerrainTileLoader extends TileLoader {
             TerrainTileLayer.setTerrainBuckets(mTile, ebs);
 
             // Kick off async raster tile fetch for texture draping (if configured).
-            // The fetch runs on a background thread; the bitmap is stored in
-            // TerrainTileLayer's pending texture map and consumed by the GL
-            // render thread on the next frame. This keeps the loader thread
-            // responsive — it never blocks on HTTP.
             TileSource rasterSource = mTileSource.getRasterSource();
             if (rasterSource != null && mTileDataSource instanceof TerrainTileDataSource) {
                 ((TerrainTileDataSource) mTileDataSource).fetchRasterAsync(
                         mTile, rasterSource);
+            }
+
+            // Kick off async vector drape texture generation (if configured).
+            TileSource vectorSource = mTileSource.getVectorSource();
+            if (vectorSource != null && mTileDataSource instanceof TerrainTileDataSource) {
+                ((TerrainTileDataSource) mTileDataSource).fetchVectorDrapeAsync(
+                        mTile, vectorSource);
             }
         }
         super.completed(result);

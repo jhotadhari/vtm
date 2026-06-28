@@ -63,12 +63,19 @@ public class TerrainTileLayer extends TileLayer {
     /** Key for storing terrain TextureItem in MapTile's TileData chain. */
     private static final Object TERRAIN_TEX = "terrain_texture";
 
+    /** Key for storing vector drape TextureItem in MapTile's TileData chain. */
+    private static final Object TERRAIN_VECTOR_TEX = "terrain_vector_texture";
+
     /**
      * Thread-safe map of pending raster bitmaps awaiting texture upload.
      * Written by the async raster fetch thread, consumed by the GL render
      * thread in {@link TerrainTileRenderer#update}.
      */
     private static final ConcurrentHashMap<MapTile, Bitmap> sPendingTextures =
+            new ConcurrentHashMap<>();
+
+    /** Pending vector drape bitmaps awaiting texture upload (same pattern as sPendingTextures). */
+    private static final ConcurrentHashMap<MapTile, Bitmap> sPendingVectorTextures =
             new ConcurrentHashMap<>();
 
     /**
@@ -234,6 +241,34 @@ public class TerrainTileLayer extends TileLayer {
             TextureItem tex = new TextureItem(bitmap);
             tile.addData(TERRAIN_TEX, new TerrainTexData(tex));
         }
+    }
+
+    /**
+     * Registers a vector drape bitmap for later texture upload.
+     * Called from the async vector drape background thread.
+     */
+    public static void addPendingVectorTexture(MapTile tile, Bitmap bitmap) {
+        sPendingVectorTextures.put(tile, bitmap);
+    }
+
+    /**
+     * Consumes a pending vector drape bitmap, creating a TextureItem.
+     * Called from the GL render thread.
+     */
+    public static void consumePendingVectorTexture(MapTile tile) {
+        Bitmap bitmap = sPendingVectorTextures.remove(tile);
+        if (bitmap != null && bitmap.isValid()) {
+            TextureItem tex = new TextureItem(bitmap);
+            tile.addData(TERRAIN_VECTOR_TEX, new TerrainTexData(tex));
+        }
+    }
+
+    /**
+     * Retrieves the vector drape {@link TextureItem} stored on a map tile.
+     */
+    public static TextureItem getTerrainVectorTexture(MapTile tile) {
+        TerrainTexData data = (TerrainTexData) tile.getData(TERRAIN_VECTOR_TEX);
+        return data != null ? data.texture : null;
     }
 
     // ─────────────────────────────────────────────

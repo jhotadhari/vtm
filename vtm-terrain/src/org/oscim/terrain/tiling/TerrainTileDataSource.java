@@ -57,6 +57,9 @@ public class TerrainTileDataSource implements ITileDataSource {
     /** Single-thread executor for async raster tile fetches. Created lazily. */
     private ExecutorService mRasterExecutor;
 
+    /** Single-thread executor for async vector drape texture generation. */
+    private ExecutorService mVectorDrapeExecutor;
+
     public TerrainTileDataSource(TerrainTileSource tileSource) {
         mTileSource = tileSource;
         mProjection = tileSource.getProjection();
@@ -216,11 +219,53 @@ public class TerrainTileDataSource implements ITileDataSource {
         });
     }
 
+    /**
+     * Kicks off an asynchronous vector drape texture generation for the given tile.
+     * Queries the vector tile source for area features and rasterizes them to a
+     * bitmap, which is stored in TerrainTileLayer's pending texture map.
+     */
+    public void fetchVectorDrapeAsync(MapTile tile, TileSource vectorSource) {
+        if (vectorSource == null) return;
+        if (tile.zoomLevel > vectorSource.getZoomLevelMax()
+                || tile.zoomLevel < vectorSource.getZoomLevelMin()) {
+            return;
+        }
+        if (mVectorDrapeExecutor == null) {
+            synchronized (this) {
+                if (mVectorDrapeExecutor == null) {
+                    mVectorDrapeExecutor = Executors.newSingleThreadExecutor(r -> {
+                        Thread t = new Thread(r, "terrain-vector-drape");
+                        t.setDaemon(true);
+                        return t;
+                    });
+                }
+            }
+        }
+        final TileSource vs = vectorSource;
+        mVectorDrapeExecutor.execute(() -> {
+            try {
+                Bitmap bitmap =
+                        org.oscim.terrain.layer.VectorDrapeRenderer.generateDrapeBitmap(tile, vs);
+                if (bitmap != null && bitmap.isValid()) {
+                    org.oscim.terrain.layer.TerrainTileLayer.addPendingVectorTexture(
+                            tile, bitmap);
+                    log.fine("TERRAIN: vector drape generated for " + tile);
+                }
+            } catch (Throwable t) {
+                log.fine("TERRAIN: vector drape failed for " + tile + ": " + t);
+            }
+        });
+    }
+
     @Override
     public void dispose() {
         if (mRasterExecutor != null) {
             mRasterExecutor.shutdownNow();
             mRasterExecutor = null;
+        }
+        if (mVectorDrapeExecutor != null) {
+            mVectorDrapeExecutor.shutdownNow();
+            mVectorDrapeExecutor = null;
         }
     }
 

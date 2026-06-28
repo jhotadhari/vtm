@@ -145,12 +145,13 @@ public class TerrainTileRenderer extends TileRenderer {
     }
 
     /**
-     * Pairs an ExtrusionBuckets with its optional raster TextureItem
-     * for use during rendering.
+     * Pairs an ExtrusionBuckets with its optional raster and vector
+     * textures for use during rendering.
      */
     private static class TerrainTileData {
         ExtrusionBuckets buckets;
-        TextureItem texture;
+        TextureItem texture;        // raster tile texture
+        TextureItem vectorTexture;  // vector drape texture
     }
 
     /** Pre-allocated tile data array for the current frame. */
@@ -183,9 +184,10 @@ public class TerrainTileRenderer extends TileRenderer {
             MapTile tile = tiles[i];
 
             // Consume any pending async raster texture for this tile.
-            // The async fetch thread stores the bitmap; we create the
-            // TextureItem here on the GL thread for safe upload.
             TerrainTileLayer.consumePendingTexture(tile);
+
+            // Consume any pending vector drape texture for this tile.
+            TerrainTileLayer.consumePendingVectorTexture(tile);
 
             ExtrusionBuckets ebs = TerrainTileLayer.getTerrainBuckets(tile);
             if (ebs == null)
@@ -199,7 +201,7 @@ public class TerrainTileRenderer extends TileRenderer {
                 }
             }
 
-            // Pair bucket with texture (may be null)
+            // Pair bucket with textures (may be null)
             TerrainTileData data = mTerrainTileData[cnt];
             if (data == null) {
                 data = new TerrainTileData();
@@ -207,6 +209,7 @@ public class TerrainTileRenderer extends TileRenderer {
             }
             data.buckets = ebs;
             data.texture = TerrainTileLayer.getTerrainTexture(tile);
+            data.vectorTexture = TerrainTileLayer.getTerrainVectorTexture(tile);
             cnt++;
         }
         mTerrainCnt = cnt;
@@ -313,8 +316,10 @@ public class TerrainTileRenderer extends TileRenderer {
                 else
                     setMatrix(mShader, v, ebs);
 
-                // Bind texture (or fallback) and set texture uniforms
-                TextureItem tex = data.texture;
+                // Bind texture: prefer vector drape (area fills), fall back
+                // to raster tile texture, fall back to 1x1 white fallback.
+                TextureItem tex = (data.vectorTexture != null)
+                        ? data.vectorTexture : data.texture;
                 if (useTex) {
                     if (tex != null) {
                         tex.bind();

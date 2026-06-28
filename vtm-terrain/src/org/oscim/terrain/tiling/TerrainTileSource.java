@@ -144,6 +144,20 @@ public class TerrainTileSource extends TileSource {
         return mTexMix;
     }
 
+    /** Optional vector tile source for area-fill draping onto terrain. */
+    private TileSource mVectorSource;
+
+    /** Sets an optional vector tile source for area-fill texture draping. */
+    public TerrainTileSource setVectorSource(TileSource vectorSource) {
+        mVectorSource = vectorSource;
+        return this;
+    }
+
+    /** Returns the vector tile source, or null if none is configured. */
+    public TileSource getVectorSource() {
+        return mVectorSource;
+    }
+
     /**
      * Returns the shared {@link ElevationAPI} for on-demand elevation queries.
      * Created lazily on first access. The same instance is shared across all

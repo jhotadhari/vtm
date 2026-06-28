@@ -76,6 +76,7 @@ public class MapsforgeTest extends GdxMapApp {
     private boolean mRasterDrape = false;
     private float mTexMix = 0.8f;
     private DemFolderFS mDemFolderRef; // kept for layer recreation
+    private MultiMapFileTileSource mMapFileSource; // kept for vector drape
 
     MapsforgeTest(File demFolder, List<File> mapFiles, File themeFile) {
         this(demFolder, mapFiles, false, false, themeFile);
@@ -101,6 +102,7 @@ public class MapsforgeTest extends GdxMapApp {
                     mapFileTileSource.setPriority(-1);
                 multiMapFileTileSource.add(mapFileTileSource);
             }
+            mMapFileSource = multiMapFileTileSource;
             mBaseLayer = mMap.setBaseMap(multiMapFileTileSource);
         } else {
             mBaseLayer = null;
@@ -217,6 +219,11 @@ public class MapsforgeTest extends GdxMapApp {
             if (rasterSource != null) {
                 terrainSource.setRasterSource(rasterSource);
             }
+        }
+
+        // Wire vector area-fill draping from the map file source
+        if (mMapFileSource != null) {
+            terrainSource.setVectorSource(mMapFileSource);
         }
 
         mTerrainLayer = new TerrainTileLayer(mMap, terrainSource);
