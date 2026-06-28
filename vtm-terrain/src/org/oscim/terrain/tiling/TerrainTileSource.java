@@ -26,12 +26,19 @@ import org.oscim.tiling.TileSource;
  * Tile source for terrain mesh generation. Configured with a {@link DemFolder}
  * pointing to HGT files and a {@link TerrainProjection} for coordinate mapping.
  * <p>
+ * An optional raster {@link TileSource} can be set to drape satellite or map
+ * imagery onto the terrain mesh. When set, each terrain tile will attempt to
+ * fetch the corresponding raster tile and blend it with the procedural height
+ * coloring.
+ * <p>
  * Usage:
  * <pre>{@code
  * TerrainTileSource terrainSource = new TerrainTileSource(
  *     Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL,
  *     new DemFolderFS(new File("/path/to/hgt")),
  *     new MercatorTerrainProjection());
+ * // Optional: drape raster imagery
+ * terrainSource.setRasterSource(new BitmapTileSource(...));
  * TerrainTileLayer terrainLayer = new TerrainTileLayer(map, terrainSource);
  * map.layers().add(terrainLayer);
  * }</pre>
@@ -43,6 +50,12 @@ public class TerrainTileSource extends TileSource {
     private float mElevationExaggeration = 5.0f;
     private float mBaseElevation = 3800f; // Andes plateau baseline in meters
     private int mTerrainColor = Color.get(180, 160, 140, 255);
+
+    /** Optional raster tile source for texture draping. */
+    private TileSource mRasterSource;
+
+    /** Blend factor between procedural color and texture (0=color only, 1=texture only). */
+    private float mTexMix = 0.8f;
 
     /**
      * Creates a terrain tile source with default Mercator projection.
@@ -100,6 +113,31 @@ public class TerrainTileSource extends TileSource {
     /** Returns the base elevation offset in meters. */
     public float getBaseElevation() {
         return mBaseElevation;
+    }
+
+    /** Sets an optional raster tile source for texture draping onto terrain. */
+    public TerrainTileSource setRasterSource(TileSource rasterSource) {
+        mRasterSource = rasterSource;
+        return this;
+    }
+
+    /** Returns the raster tile source, or null if none is configured. */
+    public TileSource getRasterSource() {
+        return mRasterSource;
+    }
+
+    /**
+     * Sets the blend factor between procedural height coloring and raster
+     * texture. 0.0 = procedural color only, 1.0 = texture only. Default 0.8.
+     */
+    public TerrainTileSource setTexMix(float texMix) {
+        mTexMix = texMix;
+        return this;
+    }
+
+    /** Returns the texture blend factor. */
+    public float getTexMix() {
+        return mTexMix;
     }
 
     @Override

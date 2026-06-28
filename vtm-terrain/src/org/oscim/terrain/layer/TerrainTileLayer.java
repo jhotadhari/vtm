@@ -15,11 +15,13 @@
 package org.oscim.terrain.layer;
 
 import org.oscim.layers.tile.MapTile;
+import org.oscim.layers.tile.MapTile.TileData;
 import org.oscim.layers.tile.TileLayer;
 import org.oscim.layers.tile.TileLoader;
 import org.oscim.layers.tile.TileManager;
 import org.oscim.map.Map;
 import org.oscim.renderer.bucket.ExtrusionBuckets;
+import org.oscim.renderer.bucket.TextureItem;
 import org.oscim.terrain.tiling.TerrainTileLoader;
 import org.oscim.terrain.tiling.TerrainTileSource;
 
@@ -50,6 +52,28 @@ public class TerrainTileLayer extends TileLayer {
 
     /** Key for storing ExtrusionBuckets in MapTile's TileData chain. */
     private static final Object TERRAIN_DATA = TerrainTileLayer.class.getName();
+
+    /** Key for storing terrain TextureItem in MapTile's TileData chain. */
+    private static final Object TERRAIN_TEX = "terrain_texture";
+
+    /**
+     * Minimal TileData wrapper for storing a TextureItem on a MapTile.
+     */
+    private static class TerrainTexData extends TileData {
+        TextureItem texture;
+
+        TerrainTexData(TextureItem texture) {
+            this.texture = texture;
+        }
+
+        @Override
+        protected void dispose() {
+            if (texture != null) {
+                texture.dispose();
+                texture = null;
+            }
+        }
+    }
 
     private final TerrainTileSource mTerrainSource;
 
@@ -85,6 +109,26 @@ public class TerrainTileLayer extends TileLayer {
     }
 
     /**
+     * Sets whether the terrain renderer should clear the depth buffer before
+     * rendering. Default is {@code true}. Set to {@code false} when a prior
+     * layer already owns the depth buffer.
+     *
+     * @see TerrainTileRenderer#setClearDepth(boolean)
+     */
+    public void setClearDepth(boolean clearDepth) {
+        TerrainTileRenderer renderer = (TerrainTileRenderer) tileRenderer();
+        renderer.setClearDepth(clearDepth);
+    }
+
+    /**
+     * Returns whether the terrain renderer clears the depth buffer before
+     * rendering.
+     */
+    public boolean getClearDepth() {
+        return ((TerrainTileRenderer) tileRenderer()).getClearDepth();
+    }
+
+    /**
      * Retrieves the {@link ExtrusionBuckets} stored on a map tile for terrain rendering.
      *
      * @param tile the map tile
@@ -102,5 +146,26 @@ public class TerrainTileLayer extends TileLayer {
      */
     public static void setTerrainBuckets(MapTile tile, ExtrusionBuckets buckets) {
         tile.addData(TERRAIN_DATA, buckets);
+    }
+
+    /**
+     * Retrieves the terrain {@link TextureItem} stored on a map tile.
+     *
+     * @param tile the map tile
+     * @return the TextureItem, or null if not present
+     */
+    public static TextureItem getTerrainTexture(MapTile tile) {
+        TerrainTexData data = (TerrainTexData) tile.getData(TERRAIN_TEX);
+        return data != null ? data.texture : null;
+    }
+
+    /**
+     * Stores a terrain {@link TextureItem} on a map tile for texture draping.
+     *
+     * @param tile    the map tile
+     * @param texture the texture item (uploaded on GL thread by renderer)
+     */
+    public static void setTerrainTexture(MapTile tile, TextureItem texture) {
+        tile.addData(TERRAIN_TEX, new TerrainTexData(texture));
     }
 }

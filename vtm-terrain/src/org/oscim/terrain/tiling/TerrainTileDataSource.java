@@ -15,6 +15,7 @@
 package org.oscim.terrain.tiling;
 
 import org.mapsforge.map.elevation.ElevationAPI;
+import org.oscim.backend.canvas.Bitmap;
 import org.oscim.core.GeometryBuffer;
 import org.oscim.core.MercatorProjection;
 import org.oscim.core.Point;
@@ -25,6 +26,7 @@ import org.oscim.terrain.projection.TerrainProjection;
 import org.oscim.tiling.ITileDataSink;
 import org.oscim.tiling.ITileDataSource;
 import org.oscim.tiling.QueryResult;
+import org.oscim.tiling.TileSource;
 
 import java.util.logging.Logger;
 
@@ -121,7 +123,15 @@ public class TerrainTileDataSource implements ITileDataSource {
             // Pass the mesh data to the loader via package-level field
             // (the loader is the sink, in the same package)
             if (sink instanceof TerrainTileLoader) {
-                ((TerrainTileLoader) sink).mMesh = mesh;
+                TerrainTileLoader loader = (TerrainTileLoader) sink;
+                loader.mMesh = mesh;
+
+                // Fetch raster tile bitmap for texture draping (if configured)
+                TileSource rasterSource = mTileSource.getRasterSource();
+                if (rasterSource != null) {
+                    fetchRasterTile(tile, loader, rasterSource);
+                }
+
                 sink.completed(QueryResult.SUCCESS);
             } else {
                 sink.completed(QueryResult.FAILED);
@@ -130,6 +140,59 @@ public class TerrainTileDataSource implements ITileDataSource {
             log.severe("TERRAIN: mesh gen failed for " + tile + ": " + t);
             t.printStackTrace();
             sink.completed(QueryResult.FAILED);
+        }
+    }
+
+    /**
+     * Fetches a raster tile bitmap from the given raster source for the
+     * specified tile, and passes the bitmap to the terrain loader via
+     * {@link ITileDataSink#setTileImage}.
+     * <p>
+     * The raster query runs synchronously on the current thread (the terrain
+     * loader thread), using a temporary data source and sink.
+     */
+    private void fetchRasterTile(MapTile tile, TerrainTileLoader loader,
+                                  TileSource rasterSource) {
+        // Check zoom bounds
+        if (tile.zoomLevel > rasterSource.getZoomLevelMax()
+                || tile.zoomLevel < rasterSource.getZoomLevelMin()) {
+            return;
+        }
+
+        ITileDataSource rasterDs = null;
+        try {
+            rasterDs = rasterSource.getDataSource();
+
+            // Capture the bitmap from the raster source via a temporary sink
+            final Bitmap[] captured = {null};
+            ITileDataSink rasterSink = new ITileDataSink() {
+                @Override
+                public void process(org.oscim.core.MapElement element) {
+                }
+
+                @Override
+                public void setTileImage(Bitmap bitmap) {
+                    captured[0] = bitmap;
+                }
+
+                @Override
+                public void completed(QueryResult result) {
+                }
+            };
+
+            rasterDs.query(tile, rasterSink);
+
+            // Pass the captured bitmap to the terrain loader
+            if (captured[0] != null) {
+                loader.setTileImage(captured[0]);
+                log.fine("TERRAIN: raster tile fetched for " + tile);
+            }
+        } catch (Throwable t) {
+            log.fine("TERRAIN: raster fetch failed for " + tile + ": " + t);
+        } finally {
+            if (rasterDs != null) {
+                rasterDs.dispose();
+            }
         }
     }
 

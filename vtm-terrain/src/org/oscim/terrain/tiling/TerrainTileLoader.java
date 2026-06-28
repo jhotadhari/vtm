@@ -14,12 +14,14 @@
  */
 package org.oscim.terrain.tiling;
 
+import org.oscim.backend.canvas.Bitmap;
 import org.oscim.backend.canvas.Color;
 import org.oscim.core.GeometryBuffer;
 import org.oscim.layers.tile.MapTile;
 import org.oscim.layers.tile.TileLoader;
 import org.oscim.renderer.bucket.ExtrusionBucket;
 import org.oscim.renderer.bucket.ExtrusionBuckets;
+import org.oscim.renderer.bucket.TextureItem;
 import org.oscim.terrain.layer.TerrainTileLayer;
 import org.oscim.tiling.ITileDataSource;
 import org.oscim.tiling.QueryResult;
@@ -48,10 +50,25 @@ public class TerrainTileLoader extends TileLoader {
      */
     GeometryBuffer mMesh;
 
+    /**
+     * Raster bitmap passed from the data source via {@link #setTileImage}.
+     * When non-null, a texture will be created for draping onto the terrain mesh.
+     */
+    private Bitmap mRasterBitmap;
+
     public TerrainTileLoader(TerrainTileLayer tileLayer, TerrainTileSource tileSource) {
         super(tileLayer.getManager());
         mTileSource = tileSource;
         mTileDataSource = tileSource.getDataSource();
+    }
+
+    /**
+     * Receives the raster tile bitmap from the terrain data source.
+     * Called by {@link TerrainTileDataSource} after fetching a raster tile.
+     */
+    @Override
+    public void setTileImage(Bitmap bitmap) {
+        mRasterBitmap = bitmap;
     }
 
     @Override
@@ -81,6 +98,12 @@ public class TerrainTileLoader extends TileLoader {
 
             // Store on the tile's data chain
             TerrainTileLayer.setTerrainBuckets(mTile, ebs);
+
+            // Upload raster bitmap as texture (if available)
+            if (mRasterBitmap != null && mRasterBitmap.isValid()) {
+                TextureItem tex = new TextureItem(mRasterBitmap);
+                TerrainTileLayer.setTerrainTexture(mTile, tex);
+            }
         }
         super.completed(result);
     }

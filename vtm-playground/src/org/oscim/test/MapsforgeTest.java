@@ -43,9 +43,12 @@ import org.oscim.theme.ExternalRenderTheme;
 import org.oscim.theme.internal.VtmThemes;
 import org.oscim.terrain.layer.TerrainTileLayer;
 import org.oscim.terrain.tiling.TerrainTileSource;
+import org.oscim.tiling.source.bitmap.BitmapTileSource;
 import org.oscim.tiling.source.hills.HillshadingTileSource;
 import org.oscim.tiling.source.mapfile.MapFileTileSource;
 import org.oscim.tiling.source.mapfile.MultiMapFileTileSource;
+import org.oscim.tiling.source.OkHttpEngine;
+import org.oscim.tiling.TileSource;
 
 import java.io.File;
 import java.util.*;
@@ -70,6 +73,8 @@ public class MapsforgeTest extends GdxMapApp {
     private boolean mBaseVisible = true;
     private float mExaggeration = 5.0f;
     private float mBaseElevation = 3800f;
+    private boolean mRasterDrape = false;
+    private float mTexMix = 0.8f;
     private DemFolderFS mDemFolderRef; // kept for layer recreation
 
     MapsforgeTest(File demFolder, List<File> mapFiles, File themeFile) {
@@ -203,11 +208,46 @@ public class MapsforgeTest extends GdxMapApp {
                 mDemFolderRef)
                 .setElevationExaggeration(mExaggeration)
                 .setBaseElevation(mBaseElevation)
-                .setTerrainColor(Color.get(220, 80, 60, 255));
+                .setTerrainColor(Color.get(220, 80, 60, 255))
+                .setTexMix(mTexMix);
+
+        // Wire raster texture draping when enabled
+        if (mRasterDrape) {
+            TileSource rasterSource = createRasterSource();
+            if (rasterSource != null) {
+                terrainSource.setRasterSource(rasterSource);
+            }
+        }
+
         mTerrainLayer = new TerrainTileLayer(mMap, terrainSource);
         mMap.layers().add(2, mTerrainLayer);
+
+        // Sync building renderer: when terrain is present, buildings test against terrain depth
+        if (mBuildingLayer != null) {
+            mBuildingLayer.getExtrusionRenderer().setClearDepth(false);
+        }
+
         mMap.updateMap(true);
-        System.out.println("TERRAIN: exaggeration = " + mExaggeration + "x");
+        System.out.println("TERRAIN: exaggeration = " + mExaggeration + "x"
+                + ", drape = " + (mRasterDrape ? "ON" : "OFF"));
+    }
+
+    /**
+     * Creates an optional raster tile source for texture draping.
+     * Returns null if raster sources cannot be configured (e.g. no HTTP engine).
+     */
+    private TileSource createRasterSource() {
+        try {
+            return BitmapTileSource.builder()
+                    .url("https://tile.openstreetmap.org")
+                    .zoomMin(Viewport.MIN_ZOOM_LEVEL)
+                    .zoomMax(Viewport.MAX_ZOOM_LEVEL)
+                    .httpFactory(new OkHttpEngine.OkHttpFactory())
+                    .build();
+        } catch (Exception e) {
+            System.err.println("TERRAIN: failed to create raster source: " + e);
+            return null;
+        }
     }
 
     @Override
@@ -222,6 +262,11 @@ public class MapsforgeTest extends GdxMapApp {
             if (themeFile != null) {
                 mMap.setTheme(new ExternalRenderTheme(themeFile.getAbsolutePath()));
                 mMap.clearMap();
+            } else if (mTerrainLayer != null) {
+                // Toggle raster texture draping on terrain
+                mRasterDrape = !mRasterDrape;
+                addTerrainLayer();
+                System.out.println("Raster drape: " + (mRasterDrape ? "ON" : "OFF"));
             }
             return true;
         }
