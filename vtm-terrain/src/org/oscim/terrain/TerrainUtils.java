@@ -31,8 +31,8 @@ public final class TerrainUtils {
     /** Default tile size in pixels. */
     static final float TILE_SIZE = Tile.SIZE;
 
-    /** Maximum short value for tile-local coordinates (= TILE_SIZE * COORD_SCALE). */
-    static final float TILE_SCALE_MAX = TILE_SIZE * COORD_SCALE;
+    /** Maximum short value for tile-local coordinates (= TILE_SIZE * COORD_SCALE = 4096). */
+    public static final float TILE_SCALE_MAX = TILE_SIZE * COORD_SCALE;
 
     private TerrainUtils() {
     }

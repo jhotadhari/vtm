@@ -27,6 +27,7 @@ import org.oscim.renderer.bucket.ExtrusionBucket;
 import org.oscim.renderer.bucket.ExtrusionBuckets;
 import org.oscim.renderer.bucket.RenderBuckets;
 import org.oscim.renderer.light.Sun;
+import org.oscim.terrain.TerrainUtils;
 import org.oscim.utils.FastMath;
 
 import static org.oscim.backend.GLAdapter.gl;
@@ -140,8 +141,8 @@ public class TerrainTileRenderer extends TileRenderer {
 
         gl.depthFunc(GL.LESS);
         gl.uniform1f(s.uAlpha, 1.0f);
-        // z-limit for height-based coloring in terrain shader
-        gl.uniform1f(s.uZLimit, 100.0f);
+        // z-limit for height-based coloring: max tile-local z (COORD_SCALE range)
+        gl.uniform1f(s.uZLimit, TerrainUtils.TILE_SCALE_MAX);
         GLUtils.glUniform3fv(s.uLight, 1, mSun.getPosition());
 
         // Enable lighting

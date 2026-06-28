@@ -40,7 +40,7 @@ public class TerrainTileSource extends TileSource {
 
     private final DemFolder mDemFolder;
     private final TerrainProjection mProjection;
-    private float mElevationExaggeration = 3.0f;
+    private float mElevationExaggeration = 10.0f;
     private int mTerrainColor = Color.get(180, 160, 140, 255);
 
     /**
