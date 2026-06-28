@@ -67,6 +67,8 @@ public class MapsforgeTest extends GdxMapApp {
     private boolean mTerrainVisible = true;
     private boolean mHillshadeVisible = true;
     private boolean mBaseVisible = true;
+    private float mExaggeration = 100.0f;
+    private DemFolderFS mDemFolderRef; // kept for layer recreation
 
     MapsforgeTest(File demFolder, List<File> mapFiles, File themeFile) {
         this(demFolder, mapFiles, false, false, themeFile);
@@ -108,13 +110,9 @@ public class MapsforgeTest extends GdxMapApp {
             mHillshadeLayer = new BitmapTileLayer(mMap, hillshadingTileSource, 150);
             mMap.layers().add(mHillshadeLayer);
 
-            // 3D terrain mesh (bright red debug color for visibility)
-            TerrainTileSource terrainSource = new TerrainTileSource(
-                    Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL,
-                    new DemFolderFS(demFolder))
-                    .setTerrainColor(Color.get(220, 80, 60, 255)); // reddish-brown
-            mTerrainLayer = new TerrainTileLayer(mMap, terrainSource);
-            mMap.layers().add(2, mTerrainLayer);
+            // 3D terrain mesh
+            mDemFolderRef = new DemFolderFS(demFolder);
+            addTerrainLayer();
         }
 
         BuildingLayer buildingLayer = null;
@@ -180,6 +178,25 @@ public class MapsforgeTest extends GdxMapApp {
         }
     }
 
+    private void addTerrainLayer() {
+        // Remove old terrain layer
+        for (int i = 0; i < 20; i++) {
+            if (mMap.layers().get(i) == mTerrainLayer) {
+                mMap.layers().remove(i);
+                break;
+            }
+        }
+        TerrainTileSource terrainSource = new TerrainTileSource(
+                Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL,
+                mDemFolderRef)
+                .setElevationExaggeration(mExaggeration)
+                .setTerrainColor(Color.get(220, 80, 60, 255));
+        mTerrainLayer = new TerrainTileLayer(mMap, terrainSource);
+        mMap.layers().add(2, mTerrainLayer);
+        mMap.updateMap(true);
+        System.out.println("TERRAIN: exaggeration = " + mExaggeration + "x");
+    }
+
     @Override
     public void dispose() {
         MapPreferences.saveMapPosition(mMap.getMapPosition());
@@ -220,6 +237,18 @@ public class MapsforgeTest extends GdxMapApp {
                 mBaseLayer.setEnabled(mBaseVisible);
             mMap.updateMap(true);
             System.out.println("Base map: " + (mBaseVisible ? "ON" : "OFF"));
+            return true;
+        }
+        if (keycode == Input.Keys.F9) {
+            // Decrease exaggeration
+            mExaggeration = Math.max(1, mExaggeration - 50);
+            addTerrainLayer();
+            return true;
+        }
+        if (keycode == Input.Keys.F10) {
+            // Increase exaggeration
+            mExaggeration += 50;
+            addTerrainLayer();
             return true;
         }
 
