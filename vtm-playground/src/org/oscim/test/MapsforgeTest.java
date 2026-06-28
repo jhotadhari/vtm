@@ -241,11 +241,25 @@ public class MapsforgeTest extends GdxMapApp {
      */
     private TileSource createRasterSource() {
         try {
+            // OSM tile usage policy requires a meaningful User-Agent
+            // (https://operations.osmfoundation.org/policies/tiles/)
+            // OkHttp's BridgeInterceptor overwrites the User-Agent header, so we
+            // inject it via a network interceptor (which runs after BridgeInterceptor).
+            okhttp3.OkHttpClient.Builder clientBuilder = new okhttp3.OkHttpClient.Builder();
+            clientBuilder.addNetworkInterceptor(new okhttp3.Interceptor() {
+                @Override
+                public okhttp3.Response intercept(okhttp3.Interceptor.Chain chain)
+                        throws java.io.IOException {
+                    return chain.proceed(chain.request().newBuilder()
+                            .header("User-Agent", "VTM/1.0 (https://github.com/opensciencemap/vtm)")
+                            .build());
+                }
+            });
             return BitmapTileSource.builder()
                     .url("https://tile.openstreetmap.org")
                     .zoomMin(Viewport.MIN_ZOOM_LEVEL)
                     .zoomMax(Viewport.MAX_ZOOM_LEVEL)
-                    .httpFactory(new OkHttpEngine.OkHttpFactory())
+                    .httpFactory(new OkHttpEngine.OkHttpFactory(clientBuilder))
                     .build();
         } catch (Exception e) {
             System.err.println("TERRAIN: failed to create raster source: " + e);
