@@ -28,6 +28,8 @@ import org.oscim.tiling.ITileDataSource;
 import org.oscim.tiling.QueryResult;
 import org.oscim.tiling.TileSource;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
 /**
@@ -51,6 +53,9 @@ public class TerrainTileDataSource implements ITileDataSource {
     private final TerrainTileSource mTileSource;
     private final TerrainProjection mProjection;
     private final ElevationAPI mElevationAPI;
+
+    /** Single-thread executor for async raster tile fetches. Created lazily. */
+    private ExecutorService mRasterExecutor;
 
     public TerrainTileDataSource(TerrainTileSource tileSource) {
         mTileSource = tileSource;
@@ -126,12 +131,6 @@ public class TerrainTileDataSource implements ITileDataSource {
                 TerrainTileLoader loader = (TerrainTileLoader) sink;
                 loader.mMesh = mesh;
 
-                // Fetch raster tile bitmap for texture draping (if configured)
-                TileSource rasterSource = mTileSource.getRasterSource();
-                if (rasterSource != null) {
-                    fetchRasterTile(tile, loader, rasterSource);
-                }
-
                 sink.completed(QueryResult.SUCCESS);
             } else {
                 sink.completed(QueryResult.FAILED);
@@ -144,60 +143,85 @@ public class TerrainTileDataSource implements ITileDataSource {
     }
 
     /**
-     * Fetches a raster tile bitmap from the given raster source for the
-     * specified tile, and passes the bitmap to the terrain loader via
-     * {@link ITileDataSink#setTileImage}.
+     * Kicks off an asynchronous raster tile fetch for the given tile.
      * <p>
-     * The raster query runs synchronously on the current thread (the terrain
-     * loader thread), using a temporary data source and sink.
+     * The raster query runs on a background thread so it does not block
+     * the terrain loader thread. When the bitmap arrives, it is stored in
+     * {@link org.oscim.terrain.layer.TerrainTileLayer}'s pending texture map
+     * for consumption by the GL render thread on the next frame.
+     *
+     * @param tile         the terrain tile
+     * @param rasterSource the raster tile source (e.g. OSM bitmap tiles)
      */
-    private void fetchRasterTile(MapTile tile, TerrainTileLoader loader,
-                                  TileSource rasterSource) {
+    public void fetchRasterAsync(MapTile tile, TileSource rasterSource) {
         // Check zoom bounds
         if (tile.zoomLevel > rasterSource.getZoomLevelMax()
                 || tile.zoomLevel < rasterSource.getZoomLevelMin()) {
             return;
         }
 
-        ITileDataSource rasterDs = null;
-        try {
-            rasterDs = rasterSource.getDataSource();
-
-            // Capture the bitmap from the raster source via a temporary sink
-            final Bitmap[] captured = {null};
-            ITileDataSink rasterSink = new ITileDataSink() {
-                @Override
-                public void process(org.oscim.core.MapElement element) {
+        // Lazy-init single-thread executor (daemon threads)
+        if (mRasterExecutor == null) {
+            synchronized (this) {
+                if (mRasterExecutor == null) {
+                    mRasterExecutor = Executors.newSingleThreadExecutor(r -> {
+                        Thread t = new Thread(r, "terrain-raster");
+                        t.setDaemon(true);
+                        return t;
+                    });
                 }
-
-                @Override
-                public void setTileImage(Bitmap bitmap) {
-                    captured[0] = bitmap;
-                }
-
-                @Override
-                public void completed(QueryResult result) {
-                }
-            };
-
-            rasterDs.query(tile, rasterSink);
-
-            // Pass the captured bitmap to the terrain loader
-            if (captured[0] != null) {
-                loader.setTileImage(captured[0]);
-                log.fine("TERRAIN: raster tile fetched for " + tile);
-            }
-        } catch (Throwable t) {
-            log.fine("TERRAIN: raster fetch failed for " + tile + ": " + t);
-        } finally {
-            if (rasterDs != null) {
-                rasterDs.dispose();
             }
         }
+
+        final TileSource rs = rasterSource;
+        mRasterExecutor.execute(() -> {
+            ITileDataSource rasterDs = null;
+            try {
+                rasterDs = rs.getDataSource();
+
+                // Capture the bitmap from the raster source via a temporary sink
+                final Bitmap[] captured = {null};
+                ITileDataSink rasterSink = new ITileDataSink() {
+                    @Override
+                    public void process(org.oscim.core.MapElement element) {
+                    }
+
+                    @Override
+                    public void setTileImage(Bitmap bitmap) {
+                        captured[0] = bitmap;
+                    }
+
+                    @Override
+                    public void completed(QueryResult result) {
+                    }
+                };
+
+                rasterDs.query(tile, rasterSink);
+
+                // Store the captured bitmap in the pending texture map.
+                // The GL render thread picks it up on the next frame (update()).
+                if (captured[0] != null && captured[0].isValid()) {
+                    org.oscim.terrain.layer.TerrainTileLayer.addPendingTexture(
+                            tile, captured[0]);
+                    log.fine("TERRAIN: async raster fetched for " + tile);
+                }
+            } catch (Throwable t) {
+                log.fine("TERRAIN: async raster fetch failed for "
+                        + tile + ": " + t);
+            } finally {
+                if (rasterDs != null) {
+                    rasterDs.dispose();
+                }
+            }
+        });
     }
 
     @Override
     public void dispose() {
+        if (mRasterExecutor != null) {
+            mRasterExecutor.shutdownNow();
+            mRasterExecutor = null;
+        }
     }
 
     @Override

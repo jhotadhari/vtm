@@ -181,6 +181,12 @@ public class TerrainTileRenderer extends TileRenderer {
         int cnt = 0;
         for (int i = 0; i < tileCnt; i++) {
             MapTile tile = tiles[i];
+
+            // Consume any pending async raster texture for this tile.
+            // The async fetch thread stores the bitmap; we create the
+            // TextureItem here on the GL thread for safe upload.
+            TerrainTileLayer.consumePendingTexture(tile);
+
             ExtrusionBuckets ebs = TerrainTileLayer.getTerrainBuckets(tile);
             if (ebs == null)
                 continue;

@@ -14,6 +14,7 @@
  */
 package org.oscim.terrain.layer;
 
+import org.oscim.backend.canvas.Bitmap;
 import org.oscim.layers.tile.MapTile;
 import org.oscim.layers.tile.MapTile.TileData;
 import org.oscim.layers.tile.TileLayer;
@@ -25,6 +26,7 @@ import org.oscim.renderer.bucket.TextureItem;
 import org.oscim.terrain.tiling.TerrainTileLoader;
 import org.oscim.terrain.tiling.TerrainTileSource;
 
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
@@ -55,6 +57,14 @@ public class TerrainTileLayer extends TileLayer {
 
     /** Key for storing terrain TextureItem in MapTile's TileData chain. */
     private static final Object TERRAIN_TEX = "terrain_texture";
+
+    /**
+     * Thread-safe map of pending raster bitmaps awaiting texture upload.
+     * Written by the async raster fetch thread, consumed by the GL render
+     * thread in {@link TerrainTileRenderer#update}.
+     */
+    private static final ConcurrentHashMap<MapTile, Bitmap> sPendingTextures =
+            new ConcurrentHashMap<>();
 
     /**
      * Minimal TileData wrapper for storing a TextureItem on a MapTile.
@@ -176,5 +186,36 @@ public class TerrainTileLayer extends TileLayer {
      */
     public static void setTerrainTexture(MapTile tile, TextureItem texture) {
         tile.addData(TERRAIN_TEX, new TerrainTexData(texture));
+    }
+
+    /**
+     * Registers a raster bitmap for later texture upload by the GL render thread.
+     * Called from the async raster fetch background thread.
+     * <p>
+     * Thread-safe: uses {@link ConcurrentHashMap}.
+     *
+     * @param tile   the terrain tile
+     * @param bitmap the raster tile bitmap to drape
+     */
+    public static void addPendingTexture(MapTile tile, Bitmap bitmap) {
+        sPendingTextures.put(tile, bitmap);
+    }
+
+    /**
+     * Consumes a pending raster bitmap for the given tile, creating a
+     * {@link TextureItem} and storing it on the tile's data chain.
+     * Called from the GL render thread ({@link TerrainTileRenderer#update}).
+     * <p>
+     * Thread-safe: {@link ConcurrentHashMap#remove} is atomic;
+     * {@link MapTile#addData} is only called from the GL thread.
+     *
+     * @param tile the terrain tile
+     */
+    public static void consumePendingTexture(MapTile tile) {
+        Bitmap bitmap = sPendingTextures.remove(tile);
+        if (bitmap != null && bitmap.isValid()) {
+            TextureItem tex = new TextureItem(bitmap);
+            tile.addData(TERRAIN_TEX, new TerrainTexData(tex));
+        }
     }
 }
