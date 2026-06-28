@@ -116,7 +116,7 @@ public class TerrainTileRenderer extends TileRenderer {
 
         // Lazy-init shader
         if (!mInitialized) {
-            mShader = new ExtrusionRenderer.Shader("extrusion_layer_mesh");
+            mShader = new ExtrusionRenderer.Shader("terrain_mesh");
             if (mShader.getProgram() <= 0) {
                 mInitialized = true; // Don't retry
                 return;
@@ -140,7 +140,8 @@ public class TerrainTileRenderer extends TileRenderer {
 
         gl.depthFunc(GL.LESS);
         gl.uniform1f(s.uAlpha, 1.0f);
-        gl.uniform1f(s.uZLimit, Float.MAX_VALUE);
+        // z-limit for height-based coloring in terrain shader
+        gl.uniform1f(s.uZLimit, 100.0f);
         GLUtils.glUniform3fv(s.uLight, 1, mSun.getPosition());
 
         // Enable lighting
