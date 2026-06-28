@@ -179,11 +179,14 @@ public class MapsforgeTest extends GdxMapApp {
     }
 
     private void addTerrainLayer() {
-        // Remove old terrain layer
-        for (int i = 0; i < 20; i++) {
-            if (mMap.layers().get(i) == mTerrainLayer) {
-                mMap.layers().remove(i);
-                break;
+        // Remove old terrain layer if present
+        if (mTerrainLayer != null) {
+            int count = mMap.layers().size();
+            for (int i = 0; i < count; i++) {
+                if (mMap.layers().get(i) == mTerrainLayer) {
+                    mMap.layers().remove(i);
+                    break;
+                }
             }
         }
         TerrainTileSource terrainSource = new TerrainTileSource(
