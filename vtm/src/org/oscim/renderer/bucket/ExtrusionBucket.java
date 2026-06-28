@@ -196,26 +196,38 @@ public class ExtrusionBucket extends RenderBucket {
                 float vy3 = points[vtx3 + 1];
                 float vz3 = points[vtx3 + 2];
 
-                // Calculate normal for color gradient
-                float ax = vx2 - vx1;
-                float ay = vy2 - vy1;
-                float az = vz2 - vz1;
+                boolean usePrecomputedNormals = element.normals != null;
 
-                float bx = vx3 - vx1;
-                float by = vy3 - vy1;
-                float bz = vz3 - vz1;
+                // Compute or look up per-vertex normals
+                short normal1, normal2, normal3;
+                if (usePrecomputedNormals) {
+                    // Use pre-computed gradient normals from GeometryBuffer
+                    normal1 = element.normals[index[k - 3]];
+                    normal2 = element.normals[index[k - 2]];
+                    normal3 = element.normals[index[k - 1]];
+                } else {
+                    // Calculate face normal from triangle geometry
+                    float ax = vx2 - vx1;
+                    float ay = vy2 - vy1;
+                    float az = vz2 - vz1;
 
-                // Vector product (c is at right angle to a and b)
-                float cx = ay * bz - az * by;
-                float cy = az * bx - ax * bz;
-                float cz = ax * by - ay * bx;
+                    float bx = vx3 - vx1;
+                    float by = vy3 - vy1;
+                    float bz = vz3 - vz1;
 
-                double len = Math.sqrt(cx * cx + cy * cy + cz * cz);
+                    // Vector product (c is at right angle to a and b)
+                    float cx = ay * bz - az * by;
+                    float cy = az * bx - ax * bz;
+                    float cz = ax * by - ay * bx;
 
-                // packing the normal in two bytes
-                int mx = FastMath.clamp(127 + (int) ((cx / len) * 128), 0, 0xff);
-                int my = FastMath.clamp(127 + (int) ((cy / len) * 128), 0, 0xff);
-                short normal = (short) ((my << 8) | (mx & NORMAL_DIR_MASK) | (cz > 0 ? 1 : 0));
+                    double len = Math.sqrt(cx * cx + cy * cy + cz * cz);
+
+                    // packing the normal in two bytes
+                    int mx = FastMath.clamp(127 + (int) ((cx / len) * 128), 0, 0xff);
+                    int my = FastMath.clamp(127 + (int) ((cy / len) * 128), 0, 0xff);
+                    short packedNormal = (short) ((my << 8) | (mx & NORMAL_DIR_MASK) | (cz > 0 ? 1 : 0));
+                    normal1 = normal2 = normal3 = packedNormal;
+                }
 
                 if (key == null)
                     key = vertexPool.get();
@@ -223,7 +235,7 @@ public class ExtrusionBucket extends RenderBucket {
                 key.set((short) (vx1 * scale),
                         (short) (vy1 * scale),
                         (short) (vz1 * scale),
-                        normal);
+                        normal1);
 
                 Vertex vertex = mVertexMap.put(key, false);
 
@@ -239,7 +251,7 @@ public class ExtrusionBucket extends RenderBucket {
                 key.set((short) (vx2 * scale),
                         (short) (vy2 * scale),
                         (short) (vz2 * scale),
-                        normal);
+                        normal2);
 
                 vertex = mVertexMap.put(key, false);
 
@@ -255,7 +267,7 @@ public class ExtrusionBucket extends RenderBucket {
                 key.set((short) (vx3 * scale),
                         (short) (vy3 * scale),
                         (short) (vz3 * scale),
-                        (short) normal);
+                        normal3);
 
                 vertex = mVertexMap.put(key, false);
                 if (vertex == null) {

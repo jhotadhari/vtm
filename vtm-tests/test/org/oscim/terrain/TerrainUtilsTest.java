@@ -434,6 +434,190 @@ public class TerrainUtilsTest {
         Assert.assertEquals("TL-BR corner Z mismatch", zTL, zBR, 1e-5f);
     }
 
+    // ---- Pre-computed gradient normals ----
+
+    @Test
+    public void normals_areComputedForAllVertices() {
+        GeometryBuffer mesh = generateFlatMesh(12, -10, 10, -20, 20);
+        Assert.assertNotNull("normals array must not be null", mesh.normals);
+        int N = TerrainUtils.getGridResolution(12);
+        Assert.assertEquals(N * N, mesh.normals.length);
+    }
+
+    @Test
+    public void normals_flatTerrain_pointStraightUp() {
+        // On completely flat terrain, all normals should be (0, 0, 1)
+        GeometryBuffer mesh = generateFlatMesh(12, -10, 10, -20, 20);
+        int N = TerrainUtils.getGridResolution(12);
+
+        for (int v = 0; v < N * N; v++) {
+            short n = mesh.normals[v];
+            // Unpack: low byte = nx, high byte = ny
+            int mx = n & 0xFF;
+            int my = (n >> 8) & 0xFF;
+            // nx = (mx / 255) * 2 - 1, range [-1, 1]
+            float nx = (mx / 255.0f) * 2.0f - 1.0f;
+            float ny = (my / 255.0f) * 2.0f - 1.0f;
+
+            // On flat terrain, gradient is zero → normal is (0, 0, 1)
+            Assert.assertEquals("nx should be ~0 for flat terrain, vertex " + v,
+                    0f, nx, 0.02f);
+            Assert.assertEquals("ny should be ~0 for flat terrain, vertex " + v,
+                    0f, ny, 0.02f);
+        }
+    }
+
+    @Test
+    public void normals_matchAtSharedVerticalBoundary() {
+        // Two adjacent tiles with a sloping elevation function.
+        // The pre-computed normals at shared edge vertices must be identical.
+        int zoom = 12;
+        double scale = 1 << zoom;
+        long mapSize = Tile.SIZE * (long) scale;
+        double latMin = 40, latMax = 50;
+
+        // Elevation function with non-trivial slope in both directions
+        TerrainUtils.ElevationSampler sampler = (lat, lon) ->
+                (float) (Math.sin(lat * 0.1) * 500 + Math.cos(lon * 0.1) * 300 + lat * 5);
+
+        // Tile A (lon 0-10), Tile B (lon 10-20)
+        GeometryBuffer meshA = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                latMin, latMax, 0, 10, sampler, 1.0f);
+        GeometryBuffer meshB = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                latMin, latMax, 10, 20, sampler, 1.0f);
+
+        int N = TerrainUtils.getGridResolution(zoom);
+
+        // Tile A's rightmost column (i=N-1) vs Tile B's leftmost column (i=0)
+        for (int j = 0; j < N; j++) {
+            int idxA = j * N + (N - 1);   // rightmost column of A
+            int idxB = j * N + 0;          // leftmost column of B
+
+            short nA = meshA.normals[idxA];
+            short nB = meshB.normals[idxB];
+
+            Assert.assertEquals(
+                    "Normal mismatch at shared vertical boundary row " + j
+                            + ": nA=0x" + Integer.toHexString(nA & 0xFFFF)
+                            + " nB=0x" + Integer.toHexString(nB & 0xFFFF),
+                    nA, nB);
+        }
+    }
+
+    @Test
+    public void normals_matchAtSharedHorizontalBoundary() {
+        int zoom = 12;
+        double scale = 1 << zoom;
+        long mapSize = Tile.SIZE * (long) scale;
+        double lonMin = -10, lonMax = 0;
+
+        // Elevation function with non-trivial slope
+        TerrainUtils.ElevationSampler sampler = (lat, lon) ->
+                (float) (lat * 10 + lon * 5 + Math.cos(lat * 0.1) * 200);
+
+        // Tile A (lat 30-40, bottom tile), Tile B (lat 40-50, top tile)
+        // Shared edge: lat=40. Tile A's top (j=0) = Tile B's bottom (j=N-1)
+        GeometryBuffer meshA = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                30, 40, lonMin, lonMax, sampler, 1.0f);
+        GeometryBuffer meshB = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                40, 50, lonMin, lonMax, sampler, 1.0f);
+
+        int N = TerrainUtils.getGridResolution(zoom);
+
+        // Tile A's top row (j=0) vs Tile B's bottom row (j=N-1)
+        for (int i = 0; i < N; i++) {
+            int idxA = 0 * N + i;              // top row of A (j=0 → lat=40)
+            int idxB = (N - 1) * N + i;         // bottom row of B (j=N-1 → lat=40)
+
+            short nA = meshA.normals[idxA];
+            short nB = meshB.normals[idxB];
+
+            Assert.assertEquals(
+                    "Normal mismatch at shared horizontal boundary col " + i
+                            + ": nA=0x" + Integer.toHexString(nA & 0xFFFF)
+                            + " nB=0x" + Integer.toHexString(nB & 0xFFFF),
+                    nA, nB);
+        }
+    }
+
+    @Test
+    public void normals_matchAtCorner_fourTiles() {
+        // Four tiles meeting at a corner: all four must share the same normal
+        // at the corner vertex.
+        int zoom = 12;
+        double scale = 1 << zoom;
+        long mapSize = Tile.SIZE * (long) scale;
+
+        TerrainUtils.ElevationSampler sampler = (lat, lon) ->
+                (float) (lat * 10 + lon * 5 + Math.sin(lat * lon * 0.001) * 300);
+
+        GeometryBuffer tl = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                40, 50, 0, 10, sampler, 1.0f);
+        GeometryBuffer tr = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                40, 50, 10, 20, sampler, 1.0f);
+        GeometryBuffer bl = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                30, 40, 0, 10, sampler, 1.0f);
+        GeometryBuffer br = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                30, 40, 10, 20, sampler, 1.0f);
+
+        int N = TerrainUtils.getGridResolution(zoom);
+
+        // All four tiles share the corner point (lat=40, lon=10)
+        int tlCorner = (N - 1) * N + (N - 1);   // bottom-right of TL
+        int trCorner = (N - 1) * N + 0;          // bottom-left of TR
+        int blCorner = 0 * N + (N - 1);           // top-right of BL
+        int brCorner = 0 * N + 0;                 // top-left of BR
+
+        short nTL = tl.normals[tlCorner];
+        short nTR = tr.normals[trCorner];
+        short nBL = bl.normals[blCorner];
+        short nBR = br.normals[brCorner];
+
+        Assert.assertEquals("TL-TR corner normal mismatch", nTL, nTR);
+        Assert.assertEquals("TL-BL corner normal mismatch", nTL, nBL);
+        Assert.assertEquals("TL-BR corner normal mismatch", nTL, nBR);
+    }
+
+    @Test
+    public void normals_varyWithTerrainSlope() {
+        // On sloped terrain, normals should tilt away from straight up.
+        // Use a steep east-west slope with strong exaggeration to ensure
+        // the gradient produces a measurable normal tilt.
+        TerrainUtils.ElevationSampler steepSlope = (lat, lon) -> lon * 5000f;
+
+        int zoom = 14; // N=65, fine grid
+        double scale = 1 << zoom;
+        long mapSize = Tile.SIZE * (long) scale;
+
+        // Stronger exaggeration amplifies the z gradient
+        float exaggeration = 10.0f;
+
+        GeometryBuffer mesh = TerrainUtils.generateTerrainMesh(
+                PROJ, mapSize, 0, 0, scale,
+                0, 10, 0, 10, steepSlope, exaggeration);
+
+        int N = TerrainUtils.getGridResolution(zoom);
+
+        // Interior vertex: should have non-zero nx due to east-west slope
+        int interiorIdx = (N / 2) * N + (N / 2);
+        short n = mesh.normals[interiorIdx];
+        int mx = n & 0xFF;
+        float nx = (mx / 255.0f) * 2.0f - 1.0f;
+
+        // East-west slope: z increases with lon (which maps to x in tile coords)
+        // gx = ∂z/∂x > 0 → normal nx = -gx < 0, pointing west
+        Assert.assertTrue("nx should be non-zero on steep sloping terrain, got " + nx,
+                Math.abs(nx) > 0.001f);
+    }
+
     // ---- Helper ----
 
     /**

@@ -157,17 +157,128 @@ public final class TerrainUtils {
             }
         }
 
+        // Compute per-vertex gradient normals for seamless tile boundaries
+        short[] normals = computeTerrainNormals(projection, N, step, points,
+                latMin, latMax, lonMin, lonMax,
+                elevationSampler, exaggeration, tileScale);
+
         // Build GeometryBuffer
         GeometryBuffer gb = new GeometryBuffer(vertexCount, indexCount);
         gb.points = points;
         gb.index = indices;
         gb.pointNextPos = vertexCount * 3;
         gb.indexCurrentPos = indexCount;
+        gb.normals = normals;
 
         // Mark as triangle mesh
         gb.type = GeometryBuffer.GeometryType.TRIS;
 
         return gb;
+    }
+
+    /**
+     * Computes per-vertex normals from the elevation gradient for seamless
+     * tile boundary lighting. Uses central finite differences in tile-local
+     * (tx, ty, tz) space. At tile boundaries, queries elevation one grid
+     * step beyond the tile so that adjacent tiles compute the same gradient
+     * at shared edges and corners.
+     * <p>
+     * The normal packing matches {@code ExtrusionBucket.addMesh}:
+     * two bytes encoding nx, ny, with the LSB of the first byte encoding
+     * the sign of nz.
+     */
+    private static short[] computeTerrainNormals(
+            TerrainProjection projection,
+            int N,
+            float step,
+            float[] points,
+            double latMin, double latMax,
+            double lonMin, double lonMax,
+            ElevationSampler elevationSampler,
+            float exaggeration,
+            double tileScale) {
+
+        short[] normals = new short[N * N];
+        double latRange = latMax - latMin;
+        double lonRange = lonMax - lonMin;
+
+        // Grid step sizes in geographic coordinates
+        double latStep = latRange / (N - 1);
+        double lonStep = lonRange / (N - 1);
+
+        // Normal direction mask: clear LSB, then set from nz sign
+        final int NORMAL_DIR_MASK = 0xFFFFFFFE;
+
+        for (int j = 0; j < N; j++) {
+            double lat = latMax - (j / (double) (N - 1)) * latRange;
+
+            for (int i = 0; i < N; i++) {
+                double lon = lonMin + (i / (double) (N - 1)) * lonRange;
+
+                // Get z at center vertex from pre-computed points array
+                float zCenter = points[(j * N + i) * 3 + 2];
+
+                // ---- X gradient (east-west): ∂tz/∂tx ----
+                float zRight;
+                if (i < N - 1) {
+                    zRight = points[(j * N + (i + 1)) * 3 + 2];
+                } else {
+                    // Right boundary: query one grid step beyond the tile
+                    double lonBeyond = lonMax + lonStep;
+                    float elev = elevationSampler.getElevation((float) lat, (float) lonBeyond);
+                    zRight = projection.elevToTileZ(elev * exaggeration, lat, tileScale);
+                }
+
+                float zLeft;
+                if (i > 0) {
+                    zLeft = points[(j * N + (i - 1)) * 3 + 2];
+                } else {
+                    // Left boundary: query one grid step beyond the tile
+                    double lonBeyond = lonMin - lonStep;
+                    float elev = elevationSampler.getElevation((float) lat, (float) lonBeyond);
+                    zLeft = projection.elevToTileZ(elev * exaggeration, lat, tileScale);
+                }
+
+                float gx = (zRight - zLeft) / (2.0f * step);
+
+                // ---- Y gradient (north-south): ∂tz/∂ty ----
+                // j=0 is top (latMax), j=N-1 is bottom (latMin)
+                float zDown;
+                if (j < N - 1) {
+                    zDown = points[((j + 1) * N + i) * 3 + 2];
+                } else {
+                    // Bottom boundary: query one grid step beyond the tile
+                    double latBeyond = latMin - latStep;
+                    float elev = elevationSampler.getElevation((float) latBeyond, (float) lon);
+                    zDown = projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
+                }
+
+                float zUp;
+                if (j > 0) {
+                    zUp = points[((j - 1) * N + i) * 3 + 2];
+                } else {
+                    // Top boundary: query one grid step beyond the tile
+                    double latBeyond = latMax + latStep;
+                    float elev = elevationSampler.getElevation((float) latBeyond, (float) lon);
+                    zUp = projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
+                }
+
+                float gy = (zDown - zUp) / (2.0f * step);
+
+                // Surface normal from gradient: (-gx, -gy, 1) normalized
+                double len = Math.sqrt((double) gx * gx + (double) gy * gy + 1.0);
+                float nx = (float) (-gx / len);
+                float ny = (float) (-gy / len);
+                float nz = (float) (1.0 / len);
+
+                // Pack into short (same format as ExtrusionBucket face normals)
+                int mx = org.oscim.utils.FastMath.clamp(127 + (int) (nx * 128), 0, 0xff);
+                int my = org.oscim.utils.FastMath.clamp(127 + (int) (ny * 128), 0, 0xff);
+                normals[j * N + i] = (short) ((my << 8) | (mx & NORMAL_DIR_MASK) | (nz > 0 ? 1 : 0));
+            }
+        }
+
+        return normals;
     }
 
     /**

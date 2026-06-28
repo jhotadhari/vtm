@@ -93,6 +93,18 @@ public class GeometryBuffer {
     public int pointNextPos;
 
     /**
+     * Optional pre-computed per-vertex normals for MESH (TRIS) geometry.
+     * When non-null, {@code normals[v]} is the packed normal for vertex
+     * {@code v}, where v is the vertex index (0 to vertexCount-1). The
+     * normal uses the same short-packing format as
+     * {@link org.oscim.renderer.bucket.ExtrusionBucket}.
+     * <p>
+     * When null, face normals are computed automatically from triangle
+     * geometry by the rendering pipeline.
+     */
+    public short[] normals;
+
+    /**
      * The current geometry type.
      */
     public GeometryType type;
