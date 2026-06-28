@@ -1,7 +1,7 @@
 apply plugin: 'application'
 
 dependencies {
-    implementation project(':vtm-desktop-lwjgl')
+    implementation project(':vtm-desktop-lwjgl3')
     file("${rootDir}/vtm-desktop/natives").eachDir() { dir ->
         implementation files(dir.path)
     }
