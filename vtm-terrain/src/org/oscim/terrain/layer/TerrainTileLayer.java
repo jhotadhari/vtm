@@ -127,6 +127,11 @@ public class TerrainTileLayer extends TileLayer {
 
         // Register shared elevation query context for use by other layers
         setElevationContext(tileSource);
+
+        // Sync the terrain renderer's projection type for correct shader/matrix selection
+        TerrainTileRenderer renderer = (TerrainTileRenderer) tileRenderer();
+        renderer.setProjectionType(tileSource.getProjection().getType());
+
         log.info("TERRAIN: layer created, zoom range "
                 + tileSource.getZoomLevelMin() + "-" + tileSource.getZoomLevelMax());
     }
@@ -326,6 +331,11 @@ public class TerrainTileLayer extends TileLayer {
         sProjection = source.getProjection();
         sBaseElevation = source.getBaseElevation();
 
+        final boolean isGlobe = (sProjection.getType() == TerrainProjection.Type.GLOBE);
+        final float metersToRadius = (isGlobe && sProjection instanceof org.oscim.terrain.projection.GlobeTerrainProjection)
+                ? ((org.oscim.terrain.projection.GlobeTerrainProjection) sProjection).getMetersToRadius()
+                : 0f;
+
         // Also register as the global ElevationProvider for layers in the
         // vtm module that can't import vtm-terrain directly.
         ElevationProvider.set(new ElevationProvider.Sampler() {
@@ -338,8 +348,20 @@ public class TerrainTileLayer extends TileLayer {
             public float metersToTileZ(float meters, double lat, double scale) {
                 return TerrainTileLayer.metersToTileZ(meters, lat, scale);
             }
+
+            @Override
+            public float metersToTileZGlobe(float meters) {
+                if (isGlobe) {
+                    return meters * metersToRadius;
+                }
+                // Flat: delegate to standard Mercator conversion
+                return metersToTileZ(meters, 0, 1);
+            }
         });
     }
+
+    /** Cached reference to the active renderer for projection type sync. */
+    private static TerrainTileRenderer mActiveRenderer;
 
     /**
      * Returns true if the terrain elevation query API is available.

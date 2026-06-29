@@ -31,8 +31,16 @@ public class ElevationProvider {
         /** Returns elevation in meters at (lat,lon), or NaN if no data is available. */
         float getElevation(float lat, float lon);
 
-        /** Converts elevation in meters to tile-local Z units for vertex buffers. */
+        /** Converts elevation in meters to tile-local Z units for vertex buffers
+         *  (flat Mercator ground scale). */
         float metersToTileZ(float meters, double lat, double scale);
+
+        /**
+         * Converts elevation in meters to a globe radial offset in rendering units.
+         * For flat Mercator this returns the same as {@link #metersToTileZ}.
+         * For globe this returns {@code meters / EARTH_RADIUS * sphereRadius}.
+         */
+        float metersToTileZGlobe(float meters);
     }
 
     private static volatile Sampler sInstance;
