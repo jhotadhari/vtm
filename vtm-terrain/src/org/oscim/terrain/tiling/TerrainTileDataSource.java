@@ -60,6 +60,9 @@ public class TerrainTileDataSource implements ITileDataSource {
     /** Single-thread executor for async vector drape texture generation. */
     private ExecutorService mVectorDrapeExecutor;
 
+    /** Set by cancel() to stop in-flight async tasks from storing results. */
+    private volatile boolean mCancelled;
+
     public TerrainTileDataSource(TerrainTileSource tileSource) {
         mTileSource = tileSource;
         mProjection = tileSource.getProjection();
@@ -79,6 +82,7 @@ public class TerrainTileDataSource implements ITileDataSource {
         }
 
         try {
+            mCancelled = false; // fresh query, clear cancellation
             if (tile.mapSize <= 0) {
                 log.warning("TERRAIN: mapSize=0 for " + tile);
                 sink.completed(QueryResult.FAILED);
@@ -201,6 +205,9 @@ public class TerrainTileDataSource implements ITileDataSource {
 
                 rasterDs.query(tile, rasterSink);
 
+                // Skip if cancelled (tile no longer needed)
+                if (mCancelled) return;
+
                 // Store the captured bitmap in the pending texture map.
                 // The GL render thread picks it up on the next frame (update()).
                 if (captured[0] != null && captured[0].isValid()) {
@@ -247,6 +254,7 @@ public class TerrainTileDataSource implements ITileDataSource {
                 Bitmap bitmap =
                         org.oscim.terrain.layer.VectorDrapeRenderer.generateDrapeBitmap(tile, vs);
                 if (bitmap != null && bitmap.isValid()) {
+                    if (mCancelled) return;
                     org.oscim.terrain.layer.TerrainTileLayer.addPendingVectorTexture(
                             tile, bitmap);
                     log.fine("TERRAIN: vector drape generated for " + tile);
@@ -271,5 +279,6 @@ public class TerrainTileDataSource implements ITileDataSource {
 
     @Override
     public void cancel() {
+        mCancelled = true;
     }
 }

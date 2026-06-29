@@ -163,7 +163,11 @@ public final class RoadTerrainMeshBuilder {
             lons[i] = MercatorProjection.pixelXToLongitude(originX + px, mapSize);
             lats[i] = MercatorProjection.pixelYToLatitude(originY + py, mapSize);
 
-            float elevMeters = TerrainTileLayer.getElevation((float) lats[i], (float) lons[i]);
+            // Ensure elevation context is visible (volatile gate via ElevationProvider)
+            float elevMeters = Float.NaN;
+            if (ElevationProvider.isAvailable()) {
+                elevMeters = TerrainTileLayer.getElevation((float) lats[i], (float) lons[i]);
+            }
             if (Float.isNaN(elevMeters))
                 elevMeters = 0f;
 

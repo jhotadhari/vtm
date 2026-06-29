@@ -18,6 +18,7 @@ import org.oscim.backend.CanvasAdapter;
 import org.oscim.backend.GL;
 import org.oscim.backend.canvas.Bitmap;
 import org.oscim.backend.canvas.Color;
+import org.oscim.core.MercatorProjection;
 import org.oscim.core.Tile;
 import org.oscim.layers.tile.MapTile;
 import org.oscim.layers.tile.TileRenderer;
@@ -212,6 +213,8 @@ public class TerrainTileRenderer extends TileRenderer {
             data.vectorTexture = TerrainTileLayer.getTerrainVectorTexture(tile);
             cnt++;
         }
+        // Clean up orphaned pending textures for tiles no longer visible
+        TerrainTileLayer.prunePendingTextures(tiles, tileCnt);
         mTerrainCnt = cnt;
         if (cnt > 0 && cnt != mLastLogCnt) {
             log.fine("TERRAIN: rendering " + cnt + " tiles");
@@ -279,10 +282,17 @@ public class TerrainTileRenderer extends TileRenderer {
 
             gl.depthFunc(GL.LESS);
 
+            // Compute dynamic u_zlimit so height-based coloring adapts to zoom.
+            // 8000m (high peak) maps to h=1.0 in the shader regardless of zoom level.
+            double scale = 1L << v.pos.zoomLevel;
+            float groundScale = (float) MercatorProjection.groundResolutionWithScale(
+                    (float) v.pos.getLatitude(), scale);
+            float zLimit = 8000.0f / (groundScale * 10);
+
             // Set common uniforms
             if (useTex) {
                 gl.uniform1f(mTexShader.uAlpha, 1.0f);
-                gl.uniform1f(mTexShader.uZLimit, Float.MAX_VALUE);
+                gl.uniform1f(mTexShader.uZLimit, zLimit);
                 GLUtils.glUniform3fv(mTexShader.uLight, 1, mSun.getPosition());
                 // Ensure fallback texture is uploaded (bind triggers upload if needed)
                 if (mFallbackTex != null) {
@@ -290,7 +300,7 @@ public class TerrainTileRenderer extends TileRenderer {
                 }
             } else {
                 gl.uniform1f(mShader.uAlpha, 1.0f);
-                gl.uniform1f(mShader.uZLimit, Float.MAX_VALUE);
+                gl.uniform1f(mShader.uZLimit, zLimit);
                 GLUtils.glUniform3fv(mShader.uLight, 1, mSun.getPosition());
             }
 
@@ -377,6 +387,12 @@ public class TerrainTileRenderer extends TileRenderer {
             log.severe("TERRAIN: render error: " + t);
             t.printStackTrace();
             mTerrainCnt = 0; // skip future renders
+            // Restore GL state to avoid corrupting subsequent layers
+            gl.depthMask(false);
+            if (v.pos.zoomLevel < 18)
+                gl.disable(GL.CULL_FACE);
+            GLState.test(false, false);
+            GLState.blend(false);
         }
     }
 

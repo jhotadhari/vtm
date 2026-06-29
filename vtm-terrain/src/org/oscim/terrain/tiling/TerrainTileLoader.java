@@ -65,6 +65,7 @@ public class TerrainTileLoader extends TileLoader {
             mTileDataSource.query(tile, this);
         } catch (Exception e) {
             log.warning("TERRAIN: loadTile error " + tile + ": " + e);
+            return false;
         }
         return true;
     }
@@ -159,7 +160,7 @@ public class TerrainTileLoader extends TileLoader {
 
     @Override
     public void dispose() {
-        mTileDataSource.cancel();
+        mTileDataSource.dispose();
     }
 
     @Override

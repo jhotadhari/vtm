@@ -29,6 +29,7 @@ import org.oscim.terrain.ElevationProvider;
 import org.oscim.terrain.projection.TerrainProjection;
 import org.oscim.terrain.tiling.TerrainTileLoader;
 import org.oscim.terrain.tiling.TerrainTileSource;
+import org.oscim.tiling.ITileDataSource;
 import org.oscim.utils.ExtrusionUtils;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -169,6 +170,46 @@ public class TerrainTileLayer extends TileLayer {
      */
     public boolean getClearDepth() {
         return ((TerrainTileRenderer) tileRenderer()).getClearDepth();
+    }
+
+    /**
+     * Disposes the terrain layer, shutting down executor services
+     * created by the underlying {@link TerrainTileDataSource}.
+     * Call when removing the terrain layer from the map.
+     */
+    public void dispose() {
+        if (mTerrainSource != null) {
+            ITileDataSource ds = mTerrainSource.getDataSource();
+            if (ds != null) {
+                ds.dispose();
+            }
+        }
+    }
+
+    /**
+     * Removes pending texture entries for tiles that are no longer in the
+     * active set. Called from the GL render thread each frame to prevent
+     * orphaned {@link Bitmap} entries from accumulating when tiles are
+     * evicted before their async fetch completes.
+     *
+     * @param activeTiles the currently visible tiles
+     * @param count       number of valid entries in {@code activeTiles}
+     */
+    public static void prunePendingTextures(MapTile[] activeTiles, int count) {
+        if (count <= 0) {
+            sPendingTextures.clear();
+            sPendingVectorTextures.clear();
+            return;
+        }
+        java.util.Set<String> active = new java.util.HashSet<>(count * 2);
+        for (int i = 0; i < count; i++) {
+            MapTile t = activeTiles[i];
+            active.add(t.zoomLevel + "/" + t.tileX + "/" + t.tileY);
+        }
+        sPendingTextures.keySet().removeIf(tile ->
+                !active.contains(tile.zoomLevel + "/" + tile.tileX + "/" + tile.tileY));
+        sPendingVectorTextures.keySet().removeIf(tile ->
+                !active.contains(tile.zoomLevel + "/" + tile.tileX + "/" + tile.tileY));
     }
 
     /**

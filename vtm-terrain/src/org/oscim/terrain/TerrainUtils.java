@@ -125,8 +125,16 @@ public final class TerrainUtils {
                 // Query elevation
                 float elevMeters = elevationSampler.getElevation((float) lat, (float) lon);
 
-                // Convert elevation to tile-local z with exaggeration
-                float tz = projection.elevToTileZ(elevMeters * exaggeration, lat, tileScale);
+                // Convert elevation to tile-local z with exaggeration.
+                // Check no-data sentinel BEFORE multiplying by exaggeration,
+                // otherwise Short.MIN_VALUE * exag ≠ Short.MIN_VALUE and the
+                // guard inside elevToTileZ() is silently bypassed.
+                float tz;
+                if (elevMeters == Short.MIN_VALUE) {
+                    tz = projection.elevToTileZ(elevMeters, lat, tileScale);
+                } else {
+                    tz = projection.elevToTileZ(elevMeters * exaggeration, lat, tileScale);
+                }
 
                 // Store vertex
                 int vIdx = (j * N + i) * 3;
@@ -226,7 +234,9 @@ public final class TerrainUtils {
                     // Right boundary: query one grid step beyond the tile
                     double lonBeyond = lonMax + lonStep;
                     float elev = elevationSampler.getElevation((float) lat, (float) lonBeyond);
-                    zRight = projection.elevToTileZ(elev * exaggeration, lat, tileScale);
+                    zRight = (elev == Short.MIN_VALUE)
+                            ? projection.elevToTileZ(elev, lat, tileScale)
+                            : projection.elevToTileZ(elev * exaggeration, lat, tileScale);
                 }
 
                 float zLeft;
@@ -236,7 +246,9 @@ public final class TerrainUtils {
                     // Left boundary: query one grid step beyond the tile
                     double lonBeyond = lonMin - lonStep;
                     float elev = elevationSampler.getElevation((float) lat, (float) lonBeyond);
-                    zLeft = projection.elevToTileZ(elev * exaggeration, lat, tileScale);
+                    zLeft = (elev == Short.MIN_VALUE)
+                            ? projection.elevToTileZ(elev, lat, tileScale)
+                            : projection.elevToTileZ(elev * exaggeration, lat, tileScale);
                 }
 
                 float gx = (zRight - zLeft) / (2.0f * step);
@@ -250,7 +262,9 @@ public final class TerrainUtils {
                     // Bottom boundary: query one grid step beyond the tile
                     double latBeyond = latMin - latStep;
                     float elev = elevationSampler.getElevation((float) latBeyond, (float) lon);
-                    zDown = projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
+                    zDown = (elev == Short.MIN_VALUE)
+                            ? projection.elevToTileZ(elev, latBeyond, tileScale)
+                            : projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
                 }
 
                 float zUp;
@@ -260,7 +274,9 @@ public final class TerrainUtils {
                     // Top boundary: query one grid step beyond the tile
                     double latBeyond = latMax + latStep;
                     float elev = elevationSampler.getElevation((float) latBeyond, (float) lon);
-                    zUp = projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
+                    zUp = (elev == Short.MIN_VALUE)
+                            ? projection.elevToTileZ(elev, latBeyond, tileScale)
+                            : projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
                 }
 
                 float gy = (zDown - zUp) / (2.0f * step);

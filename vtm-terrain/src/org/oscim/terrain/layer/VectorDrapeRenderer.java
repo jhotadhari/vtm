@@ -286,7 +286,6 @@ public class VectorDrapeRenderer {
                     if (active.get(a).yMax <= y)
                         active.remove(a);
                 }
-                for (Edge e : active) e.x += e.dx;
                 active.sort((a, b) -> Float.compare(a.x, b.x));
 
                 for (int k = 0; k + 1 < active.size(); k += 2) {
@@ -297,6 +296,7 @@ public class VectorDrapeRenderer {
                         Arrays.fill(pixels, rowOff, rowOff + (xEnd - xStart + 1), color);
                     }
                 }
+                for (Edge e : active) e.x += e.dx;
             }
             ppos += len;
         }

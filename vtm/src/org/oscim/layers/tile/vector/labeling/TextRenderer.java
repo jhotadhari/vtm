@@ -78,17 +78,20 @@ class TextRenderer extends BucketRenderer {
         TextureBucket.Renderer.depthTest = terrainActive;
         GLState.test(terrainActive, false);
 
-        buckets.vbo.bind();
+        try {
+            buckets.vbo.bind();
 
-        float scale = (float) (v.pos.scale / mMapPosition.scale);
+            float scale = (float) (v.pos.scale / mMapPosition.scale);
 
-        setMatrix(v, false);
+            setMatrix(v, false);
 
-        for (RenderBucket l = buckets.get(); l != null; )
-            l = TextureBucket.Renderer.draw(l, v, scale);
-
-        // Restore default
-        TextureBucket.Renderer.depthTest = false;
+            for (RenderBucket l = buckets.get(); l != null; )
+                l = TextureBucket.Renderer.draw(l, v, scale);
+        } finally {
+            // Restore defaults — must run even if render loop throws
+            TextureBucket.Renderer.depthTest = false;
+            GLState.test(false, false);
+        }
     }
 
 }

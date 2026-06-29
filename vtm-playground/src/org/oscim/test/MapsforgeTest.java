@@ -170,7 +170,7 @@ public class MapsforgeTest extends GdxMapApp {
             mMap.setMapPosition(pos);
         }
 
-        if (SHADOWS) {
+        if (SHADOWS && buildingLayer != null) {
             final ExtrusionRenderer extrusionRenderer = buildingLayer.getExtrusionRenderer();
             mMap.events.bind(new Map.UpdateListener() {
                 Calendar date = Calendar.getInstance();
@@ -206,7 +206,7 @@ public class MapsforgeTest extends GdxMapApp {
     }
 
     private void addTerrainLayer() {
-        // Remove old terrain layer if present
+        // Remove and dispose old terrain layer if present
         if (mTerrainLayer != null) {
             int count = mMap.layers().size();
             for (int i = 0; i < count; i++) {
@@ -215,6 +215,7 @@ public class MapsforgeTest extends GdxMapApp {
                     break;
                 }
             }
+            mTerrainLayer.dispose();
         }
         TerrainTileSource terrainSource = new TerrainTileSource(
                 Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL,
