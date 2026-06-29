@@ -111,14 +111,30 @@ public class TerrainTileDataSource implements ITileDataSource {
                 return (float) e - baseElev;
             };
 
-            // Check if tile is entirely ocean
-            if (TerrainUtils.isOceanTile(sampler, bottomLat, topLat, leftLon, rightLon)) {
+            // Check if tile has any elevation data
+            boolean isOcean = TerrainUtils.isOceanTile(sampler, bottomLat, topLat, leftLon, rightLon);
+
+            // When a raster source is configured, generate a flat sea-level
+            // mesh for ocean tiles so the raster imagery has a surface to
+            // drape on. Without this, only areas with HGT data show terrain.
+            if (isOcean && mTileSource.getRasterSource() == null) {
                 log.finer("TERRAIN: ocean tile " + tile);
                 sink.completed(QueryResult.SUCCESS);
                 return;
             }
 
-            log.fine("TERRAIN: generating mesh for " + tile);
+            if (isOcean) {
+                log.fine("TERRAIN: flat ocean tile for raster drape " + tile);
+            } else {
+                log.fine("TERRAIN: generating mesh for " + tile);
+            }
+
+            // For ocean tiles, use a no-data sampler to produce a flat
+            // mesh at sea level (z=0). For globe projection, the sphere
+            // curvature still applies — vertices land on the sphere surface.
+            TerrainUtils.ElevationSampler activeSampler = isOcean
+                    ? (lat, lon) -> Short.MIN_VALUE
+                    : sampler;
 
             // Generate terrain mesh
             GeometryBuffer mesh = TerrainUtils.generateTerrainMesh(
@@ -129,7 +145,7 @@ public class TerrainTileDataSource implements ITileDataSource {
                     scale,
                     bottomLat, topLat,
                     leftLon, rightLon,
-                    sampler,
+                    activeSampler,
                     mTileSource.getElevationExaggeration());
 
             // Pass the mesh data to the loader via package-level field
