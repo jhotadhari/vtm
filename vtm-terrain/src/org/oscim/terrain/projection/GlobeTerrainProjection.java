@@ -151,7 +151,7 @@ public class GlobeTerrainProjection implements TerrainProjection {
      * @param radius sphere radius (including elevation offset if any)
      * @param out    output array of length 3: [x, y, z]
      */
-    static void latLonToECEF(float lat, float lon, float radius, float[] out) {
+    public static void latLonToECEF(float lat, float lon, float radius, float[] out) {
         double latRad = Math.toRadians(lat);
         double lonRad = Math.toRadians(lon);
         double cosLat = Math.cos(latRad);

@@ -34,6 +34,7 @@ import org.oscim.renderer.bucket.RenderBuckets;
 import org.oscim.renderer.bucket.TextureItem;
 import org.oscim.renderer.light.Sun;
 import org.oscim.terrain.TerrainUtils;
+import org.oscim.terrain.projection.TerrainProjection;
 import org.oscim.utils.FastMath;
 
 import java.util.logging.Logger;
@@ -63,6 +64,15 @@ public class TerrainTileRenderer extends TileRenderer {
 
     /** Mesh shader with texture support (for raster draping). */
     private TerrainTexShader mTexShader;
+
+    /** Globe mesh shader (procedural color + atmosphere). */
+    private GlobeShader mGlobeShader;
+
+    /** Globe mesh shader with texture support. */
+    private GlobeTexShader mGlobeTexShader;
+
+    /** The current projection type. Set by TerrainTileLayer during construction. */
+    private TerrainProjection.Type mProjectionType = TerrainProjection.Type.MERCATOR;
 
     /** Whether the shader has been initialized. */
     private boolean mInitialized;
@@ -116,6 +126,72 @@ public class TerrainTileRenderer extends TileRenderer {
         }
     }
 
+    /**
+     * Globe mesh shader with atmosphere/fog. Uses terrain_globe.glsl.
+     */
+    private static class GlobeShader extends GLShader {
+        public int aPos, aNormal;
+        public int uMVP, uColor, uAlpha, uMode, uZLimit, uLight;
+        public int uGlobeRadius, uAtmosphereColor, uFogDensity;
+        public int program;
+
+        GlobeShader() {
+            if (!createDirective("terrain_globe", null))
+                return;
+            program = super.program;
+            uMVP = getUniform("u_mvp");
+            uColor = getUniform("u_color");
+            uAlpha = getUniform("u_alpha");
+            uMode = getUniform("u_mode");
+            uZLimit = getUniform("u_zlimit");
+            aPos = getAttrib("a_pos");
+            aNormal = getAttrib("a_normal");
+            uLight = getUniform("u_light");
+            uGlobeRadius = getUniform("u_globeRadius");
+            uAtmosphereColor = getUniform("u_atmosphereColor");
+            uFogDensity = getUniform("u_fogDensity");
+        }
+
+        void activate() {
+            GLState.useProgram(program);
+        }
+    }
+
+    /**
+     * Globe mesh shader with texture sampling and atmosphere.
+     * Uses terrain_globe_tex.glsl.
+     */
+    private static class GlobeTexShader extends GLShader {
+        public int aPos, aNormal;
+        public int uMVP, uColor, uAlpha, uMode, uZLimit, uLight;
+        public int uTex, uTexMix;
+        public int uGlobeRadius, uAtmosphereColor, uFogDensity;
+        public int program;
+
+        GlobeTexShader() {
+            if (!createDirective("terrain_globe_tex", null))
+                return;
+            program = super.program;
+            uMVP = getUniform("u_mvp");
+            uColor = getUniform("u_color");
+            uAlpha = getUniform("u_alpha");
+            uMode = getUniform("u_mode");
+            uZLimit = getUniform("u_zlimit");
+            aPos = getAttrib("a_pos");
+            aNormal = getAttrib("a_normal");
+            uLight = getUniform("u_light");
+            uTex = getUniform("u_tex");
+            uTexMix = getUniform("u_texMix");
+            uGlobeRadius = getUniform("u_globeRadius");
+            uAtmosphereColor = getUniform("u_atmosphereColor");
+            uFogDensity = getUniform("u_fogDensity");
+        }
+
+        void activate() {
+            GLState.useProgram(program);
+        }
+    }
+
     public TerrainTileRenderer() {
         super();
         mSun = new Sun();
@@ -143,6 +219,22 @@ public class TerrainTileRenderer extends TileRenderer {
     /** Returns the texture blend factor. */
     public float getTexMix() {
         return mTexMix;
+    }
+
+    /**
+     * Sets the projection type. Must be called before the first render frame.
+     * Determines which shader and matrix strategy to use.
+     */
+    public void setProjectionType(TerrainProjection.Type type) {
+        if (mProjectionType != type) {
+            mProjectionType = type;
+            mInitialized = false; // force shader re-init
+        }
+    }
+
+    /** Returns the current projection type. */
+    public TerrainProjection.Type getProjectionType() {
+        return mProjectionType;
     }
 
     /**
@@ -228,37 +320,69 @@ public class TerrainTileRenderer extends TileRenderer {
             return;
 
         try {
+            boolean isGlobe = (mProjectionType == TerrainProjection.Type.GLOBE);
+
             // Lazy-init shaders
             if (!mInitialized) {
-                // Try texture shader first
-                mTexShader = new TerrainTexShader();
-                boolean useTex = mTexShader.program > 0;
+                if (isGlobe) {
+                    // Try globe texture shader first
+                    mGlobeTexShader = new GlobeTexShader();
+                    boolean useGlobeTex = mGlobeTexShader.program > 0;
 
-                if (!useTex) {
-                    // Fall back to procedural mesh shader
-                    mShader = new ExtrusionRenderer.Shader("extrusion_layer_mesh");
-                    if (mShader.getProgram() <= 0) {
-                        log.severe("TERRAIN: shader init failed");
-                        mInitialized = true;
-                        return;
+                    if (!useGlobeTex) {
+                        // Fall back to globe procedural shader
+                        mGlobeShader = new GlobeShader();
+                        if (mGlobeShader.program <= 0) {
+                            log.severe("TERRAIN: globe shader init failed");
+                            mInitialized = true;
+                            return;
+                        }
                     }
-                }
 
-                // Create 1x1 white fallback texture
-                if (useTex) {
-                    Bitmap fb = CanvasAdapter.newBitmap(1, 1, 0);
-                    fb.eraseColor(Color.WHITE);
-                    mFallbackTex = new TextureItem(fb);
+                    // Create 1x1 white fallback texture
+                    if (useGlobeTex) {
+                        Bitmap fb = CanvasAdapter.newBitmap(1, 1, 0);
+                        fb.eraseColor(Color.WHITE);
+                        mFallbackTex = new TextureItem(fb);
+                    }
+
+                    log.info("TERRAIN: globe shader initialized"
+                            + (useGlobeTex ? " (tex)" : ""));
+                } else {
+                    // Try texture shader first
+                    mTexShader = new TerrainTexShader();
+                    boolean useTex = mTexShader.program > 0;
+
+                    if (!useTex) {
+                        // Fall back to procedural mesh shader
+                        mShader = new ExtrusionRenderer.Shader("extrusion_layer_mesh");
+                        if (mShader.getProgram() <= 0) {
+                            log.severe("TERRAIN: shader init failed");
+                            mInitialized = true;
+                            return;
+                        }
+                    }
+
+                    // Create 1x1 white fallback texture
+                    if (useTex) {
+                        Bitmap fb = CanvasAdapter.newBitmap(1, 1, 0);
+                        fb.eraseColor(Color.WHITE);
+                        mFallbackTex = new TextureItem(fb);
+                    }
+
+                    log.info("TERRAIN: shader initialized, program="
+                            + (useTex ? mTexShader.program : mShader.getProgram()));
                 }
 
                 mInitialized = true;
-                if (useTex)
-                    log.info("TERRAIN: tex shader initialized, program=" + mTexShader.program);
-                else
-                    log.info("TERRAIN: shader initialized, program=" + mShader.getProgram());
             }
 
-            boolean useTex = mTexShader != null && mTexShader.program > 0;
+            boolean useTex;
+            if (isGlobe) {
+                useTex = mGlobeTexShader != null && mGlobeTexShader.program > 0;
+            } else {
+                useTex = mTexShader != null && mTexShader.program > 0;
+            }
 
             // Depth buffer setup
             gl.depthMask(true);
@@ -268,12 +392,22 @@ public class TerrainTileRenderer extends TileRenderer {
             GLState.test(true, false);
 
             // Bind shader
-            if (useTex) {
-                mTexShader.activate();
-                GLState.enableVertexArrays(mTexShader.aPos, GLState.DISABLED);
+            if (isGlobe) {
+                if (useTex) {
+                    mGlobeTexShader.activate();
+                    GLState.enableVertexArrays(mGlobeTexShader.aPos, GLState.DISABLED);
+                } else {
+                    mGlobeShader.activate();
+                    GLState.enableVertexArrays(mGlobeShader.aPos, GLState.DISABLED);
+                }
             } else {
-                mShader.useProgram();
-                GLState.enableVertexArrays(mShader.aPos, GLState.DISABLED);
+                if (useTex) {
+                    mTexShader.activate();
+                    GLState.enableVertexArrays(mTexShader.aPos, GLState.DISABLED);
+                } else {
+                    mShader.useProgram();
+                    GLState.enableVertexArrays(mShader.aPos, GLState.DISABLED);
+                }
             }
 
             // Face culling at moderate zoom
@@ -289,19 +423,43 @@ public class TerrainTileRenderer extends TileRenderer {
                     (float) v.pos.getLatitude(), scale);
             float zLimit = 8000.0f / (groundScale * 10);
 
-            // Set common uniforms
-            if (useTex) {
-                gl.uniform1f(mTexShader.uAlpha, 1.0f);
-                gl.uniform1f(mTexShader.uZLimit, zLimit);
-                GLUtils.glUniform3fv(mTexShader.uLight, 1, mSun.getPosition());
-                // Ensure fallback texture is uploaded (bind triggers upload if needed)
-                if (mFallbackTex != null) {
-                    mFallbackTex.bind();
+            // Set common uniforms (per-shader-variant)
+            if (isGlobe) {
+                if (useTex) {
+                    gl.uniform1f(mGlobeTexShader.uAlpha, 1.0f);
+                    gl.uniform1f(mGlobeTexShader.uZLimit, zLimit);
+                    GLUtils.glUniform3fv(mGlobeTexShader.uLight, 1, mSun.getPosition());
+                    // Atmosphere uniforms
+                    gl.uniform1f(mGlobeTexShader.uGlobeRadius, 4096.0f);
+                    GLUtils.glUniform4fv(mGlobeTexShader.uAtmosphereColor, 1,
+                            new float[]{0.65f, 0.78f, 0.92f, 1.0f});
+                    gl.uniform1f(mGlobeTexShader.uFogDensity, 0.6f);
+                    if (mFallbackTex != null) {
+                        mFallbackTex.bind();
+                    }
+                } else {
+                    gl.uniform1f(mGlobeShader.uAlpha, 1.0f);
+                    gl.uniform1f(mGlobeShader.uZLimit, zLimit);
+                    GLUtils.glUniform3fv(mGlobeShader.uLight, 1, mSun.getPosition());
+                    // Atmosphere uniforms
+                    gl.uniform1f(mGlobeShader.uGlobeRadius, 4096.0f);
+                    GLUtils.glUniform4fv(mGlobeShader.uAtmosphereColor, 1,
+                            new float[]{0.65f, 0.78f, 0.92f, 1.0f});
+                    gl.uniform1f(mGlobeShader.uFogDensity, 0.6f);
                 }
             } else {
-                gl.uniform1f(mShader.uAlpha, 1.0f);
-                gl.uniform1f(mShader.uZLimit, zLimit);
-                GLUtils.glUniform3fv(mShader.uLight, 1, mSun.getPosition());
+                if (useTex) {
+                    gl.uniform1f(mTexShader.uAlpha, 1.0f);
+                    gl.uniform1f(mTexShader.uZLimit, zLimit);
+                    GLUtils.glUniform3fv(mTexShader.uLight, 1, mSun.getPosition());
+                    if (mFallbackTex != null) {
+                        mFallbackTex.bind();
+                    }
+                } else {
+                    gl.uniform1f(mShader.uAlpha, 1.0f);
+                    gl.uniform1f(mShader.uZLimit, zLimit);
+                    GLUtils.glUniform3fv(mShader.uLight, 1, mSun.getPosition());
+                }
             }
 
             // Enable lighting
@@ -320,11 +478,20 @@ public class TerrainTileRenderer extends TileRenderer {
                 ebs.vbo.bind();
                 ebs.ibo.bind();
 
-                // Set matrix using the appropriate shader
-                if (useTex)
+                // Set matrix using the appropriate shader + projection
+                if (isGlobe) {
+                    setMatrixGlobe(v, ebs);
+                    // Set mvp on the active globe shader
+                    if (useTex) {
+                        v.mvp.setAsUniform(mGlobeTexShader.uMVP);
+                    } else {
+                        v.mvp.setAsUniform(mGlobeShader.uMVP);
+                    }
+                } else if (useTex) {
                     setMatrixTex(v, ebs);
-                else
+                } else {
                     setMatrix(mShader, v, ebs);
+                }
 
                 // Bind texture: prefer vector drape (area fills), fall back
                 // to raster tile texture, fall back to 1x1 white fallback.
@@ -336,13 +503,46 @@ public class TerrainTileRenderer extends TileRenderer {
                     } else if (mFallbackTex != null) {
                         mFallbackTex.bind();
                     }
-                    gl.uniform1i(mTexShader.uTex, 0);
-                    gl.uniform1f(mTexShader.uTexMix, (tex != null) ? mTexMix : 0.0f);
+                    if (isGlobe) {
+                        gl.uniform1i(mGlobeTexShader.uTex, 0);
+                        gl.uniform1f(mGlobeTexShader.uTexMix, (tex != null) ? mTexMix : 0.0f);
+                    } else {
+                        gl.uniform1i(mTexShader.uTex, 0);
+                        gl.uniform1f(mTexShader.uTexMix, (tex != null) ? mTexMix : 0.0f);
+                    }
                 }
 
                 // Iterate through extrusion buckets in this tile
                 for (ExtrusionBucket eb = ebs.buckets(); eb != null; eb = eb.next()) {
-                    if (useTex) {
+                    if (isGlobe) {
+                        if (useTex) {
+                            GLUtils.glUniform4fv(mGlobeTexShader.uColor, 1, eb.getColors());
+                            gl.vertexAttribPointer(mGlobeTexShader.aPos, 3, GL.SHORT,
+                                    false, RenderBuckets.SHORT_BYTES * 4,
+                                    eb.getVertexOffset());
+                            gl.vertexAttribPointer(mGlobeTexShader.aNormal, 2, GL.UNSIGNED_BYTE,
+                                    false, RenderBuckets.SHORT_BYTES * 4,
+                                    eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
+                            if (eb.idx[4] > 0) {
+                                gl.uniform1i(mGlobeTexShader.uMode, 0);
+                                gl.drawElements(GL.TRIANGLES, eb.idx[4],
+                                        GL.UNSIGNED_SHORT, eb.off[4]);
+                            }
+                        } else {
+                            GLUtils.glUniform4fv(mGlobeShader.uColor, 1, eb.getColors());
+                            gl.vertexAttribPointer(mGlobeShader.aPos, 3, GL.SHORT,
+                                    false, RenderBuckets.SHORT_BYTES * 4,
+                                    eb.getVertexOffset());
+                            gl.vertexAttribPointer(mGlobeShader.aNormal, 2, GL.UNSIGNED_BYTE,
+                                    false, RenderBuckets.SHORT_BYTES * 4,
+                                    eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
+                            if (eb.idx[4] > 0) {
+                                gl.uniform1i(mGlobeShader.uMode, 0);
+                                gl.drawElements(GL.TRIANGLES, eb.idx[4],
+                                        GL.UNSIGNED_SHORT, eb.off[4]);
+                            }
+                        }
+                    } else if (useTex) {
                         GLUtils.glUniform4fv(mTexShader.uColor, 1, eb.getColors());
 
                         gl.vertexAttribPointer(mTexShader.aPos, 3, GL.SHORT,
@@ -413,6 +613,40 @@ public class TerrainTileRenderer extends TileRenderer {
         v.mvp.multiplyLhs(v.viewproj);
 
         v.mvp.setAsUniform(s.uMVP);
+    }
+
+    /**
+     * Sets up the model-view-projection matrix for a globe terrain tile.
+     * For globe, vertices are ECEF-relative (relative to tile center on
+     * sphere), so the model matrix is just a translation to the tile
+     * center's absolute ECEF position. The viewproj matrix is the orbital
+     * camera from {@code GlobeViewController}.
+     */
+    private void setMatrixGlobe(GLViewport v, ExtrusionBuckets ebs) {
+        // Compute tile center geographic position from Mercator coordinates
+        int z = ebs.zoomLevel;
+        long mapSize = Tile.SIZE << z;
+        double centerX = ebs.x + Tile.SIZE / 2.0;
+        double centerY = ebs.y + Tile.SIZE / 2.0;
+        double centerLat = MercatorProjection.pixelYToLatitude(centerY, mapSize);
+        double centerLon = MercatorProjection.pixelXToLongitude(centerX, mapSize);
+
+        // Compute tile center ECEF on sphere
+        float[] ecef = new float[3];
+        org.oscim.terrain.projection.GlobeTerrainProjection.latLonToECEF(
+                (float) centerLat, (float) centerLon, 4096.0f, ecef);
+
+        // Model matrix: translate to tile center ECEF
+        v.mvp.setTranslation(ecef[0], ecef[1], ecef[2]);
+
+        // Apply view-projection matrix
+        v.mvp.multiplyLhs(v.viewproj);
+
+        // Set uniform (we don't know which shader here, but caller will override if needed)
+        // Actually, the caller sets mvp via the per-iteration branches.
+        // We need uniform locations. Let's use a generic approach:
+        // This method is called before the per-eb loop which sets the mvp uniform.
+        // For now, set mvp on whichever shader is active.
     }
 
     /**
