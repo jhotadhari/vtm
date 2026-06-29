@@ -6,25 +6,26 @@ uniform vec4 u_color;
 uniform float u_alpha;
 uniform vec3 u_light;
 uniform float u_zlimit;
-uniform float u_globeRadius;
+uniform vec3 u_cameraPos;
 attribute vec4 a_pos;
 attribute vec2 a_normal;
 varying vec4 color;
 varying vec2 v_texcoord;
 varying vec3 v_normal;
-varying vec3 v_localPos;
+varying vec3 v_worldPos;
 
 void main() {
     vec4 pos = a_pos;
     pos.z *= u_alpha;
     gl_Position = u_mvp * pos;
 
-    // Compute UV from vertex position (tile-local coords, works for ECEF-relative too)
-    // For globe, we use the stored x/y which are ECEF-relative but still bounded
+    // Compute UV from vertex position (tile-local coords 0..4096 for Mercator).
+    // For globe ECEF-relative coords, this is approximate; raster texture UV
+    // accuracy depends on the mesh being reasonably tile-shaped in ECEF space.
     v_texcoord = a_pos.xy / 4096.0;
 
-    // Pass tile-local position and normal to fragment for atmosphere
-    v_localPos = a_pos.xyz;
+    // Pass world-space position and normal for atmosphere
+    v_worldPos = a_pos.xyz;
 
     // Reconstruct face normal from packed 2-byte encoding
     vec2 enc = (a_normal / 255.0);
@@ -64,24 +65,26 @@ precision highp float;
 #endif
 uniform sampler2D u_tex;
 uniform float u_texMix;
+uniform vec3 u_cameraPos;
 uniform vec4 u_atmosphereColor;
 uniform float u_fogDensity;
 varying vec4 color;
 varying vec2 v_texcoord;
 varying vec3 v_normal;
-varying vec3 v_localPos;
+varying vec3 v_worldPos;
 
 void main() {
-    // Atmosphere limb fog
-    float limbFactor = 1.0 - abs(v_normal.z);
-    float fog = smoothstep(0.15, 0.85, limbFactor) * u_fogDensity;
+    // Atmosphere limb fog using view direction
+    vec3 viewDir = normalize(u_cameraPos - v_worldPos);
+    float ndotv = abs(dot(normalize(v_normal), viewDir));
+    float limbFactor = 1.0 - ndotv;
 
-    vec3 atmosphere = vec3(0.65, 0.78, 0.92); // light blue sky
+    float fog = smoothstep(0.15, 0.85, limbFactor) * u_fogDensity;
 
     vec4 texColor = texture2D(u_tex, v_texcoord);
     // Mix procedural terrain color with raster texture
     vec3 terrainColor = mix(color.rgb, texColor.rgb, u_texMix);
-    terrainColor = mix(terrainColor, atmosphere, fog);
+    terrainColor = mix(terrainColor, u_atmosphereColor.rgb, fog);
 
     gl_FragColor = vec4(terrainColor, color.a);
 }

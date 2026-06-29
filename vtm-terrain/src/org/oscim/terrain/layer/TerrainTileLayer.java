@@ -128,9 +128,9 @@ public class TerrainTileLayer extends TileLayer {
         // Register shared elevation query context for use by other layers
         setElevationContext(tileSource);
 
-        // Sync the terrain renderer's projection type for correct shader/matrix selection
+        // Sync the terrain renderer's projection for correct shader/matrix selection
         TerrainTileRenderer renderer = (TerrainTileRenderer) tileRenderer();
-        renderer.setProjectionType(tileSource.getProjection().getType());
+        renderer.setProjection(tileSource.getProjection());
 
         log.info("TERRAIN: layer created, zoom range "
                 + tileSource.getZoomLevelMin() + "-" + tileSource.getZoomLevelMax());

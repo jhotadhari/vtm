@@ -74,6 +74,15 @@ public class TerrainTileRenderer extends TileRenderer {
     /** The current projection type. Set by TerrainTileLayer during construction. */
     private TerrainProjection.Type mProjectionType = TerrainProjection.Type.MERCATOR;
 
+    /**
+     * The terrain projection instance, used to query sphere radius and tile
+     * center ECEF for globe rendering. Null for Mercator (flat plane).
+     */
+    private TerrainProjection mProjection;
+
+    /** Pre-allocated atmosphere color for globe shader uniforms. */
+    private static final float[] ATMOSPHERE_COLOR = {0.65f, 0.78f, 0.92f, 1.0f};
+
     /** Whether the shader has been initialized. */
     private boolean mInitialized;
 
@@ -132,7 +141,7 @@ public class TerrainTileRenderer extends TileRenderer {
     private static class GlobeShader extends GLShader {
         public int aPos, aNormal;
         public int uMVP, uColor, uAlpha, uMode, uZLimit, uLight;
-        public int uGlobeRadius, uAtmosphereColor, uFogDensity;
+        public int uCameraPos, uAtmosphereColor, uFogDensity;
         public int program;
 
         GlobeShader() {
@@ -147,7 +156,7 @@ public class TerrainTileRenderer extends TileRenderer {
             aPos = getAttrib("a_pos");
             aNormal = getAttrib("a_normal");
             uLight = getUniform("u_light");
-            uGlobeRadius = getUniform("u_globeRadius");
+            uCameraPos = getUniform("u_cameraPos");
             uAtmosphereColor = getUniform("u_atmosphereColor");
             uFogDensity = getUniform("u_fogDensity");
         }
@@ -165,7 +174,7 @@ public class TerrainTileRenderer extends TileRenderer {
         public int aPos, aNormal;
         public int uMVP, uColor, uAlpha, uMode, uZLimit, uLight;
         public int uTex, uTexMix;
-        public int uGlobeRadius, uAtmosphereColor, uFogDensity;
+        public int uCameraPos, uAtmosphereColor, uFogDensity;
         public int program;
 
         GlobeTexShader() {
@@ -182,7 +191,7 @@ public class TerrainTileRenderer extends TileRenderer {
             uLight = getUniform("u_light");
             uTex = getUniform("u_tex");
             uTexMix = getUniform("u_texMix");
-            uGlobeRadius = getUniform("u_globeRadius");
+            uCameraPos = getUniform("u_cameraPos");
             uAtmosphereColor = getUniform("u_atmosphereColor");
             uFogDensity = getUniform("u_fogDensity");
         }
@@ -222,19 +231,46 @@ public class TerrainTileRenderer extends TileRenderer {
     }
 
     /**
-     * Sets the projection type. Must be called before the first render frame.
-     * Determines which shader and matrix strategy to use.
+     * Sets the projection and its type. Must be called before the first
+     * render frame. Determines which shader and matrix strategy to use.
+     * <p>
+     * When the projection type changes, old GL shader programs are deleted
+     * to prevent resource leaks.
      */
-    public void setProjectionType(TerrainProjection.Type type) {
-        if (mProjectionType != type) {
-            mProjectionType = type;
+    public void setProjection(TerrainProjection projection) {
+        TerrainProjection.Type newType = projection.getType();
+        if (mProjectionType != newType) {
+            // Delete old GL programs before switching
+            deleteShaderPrograms();
+            mProjectionType = newType;
             mInitialized = false; // force shader re-init
         }
+        mProjection = projection;
     }
 
     /** Returns the current projection type. */
     public TerrainProjection.Type getProjectionType() {
         return mProjectionType;
+    }
+
+    /** Deletes any currently loaded GL shader programs to prevent leaks. */
+    private void deleteShaderPrograms() {
+        if (mTexShader != null && mTexShader.program > 0) {
+            gl.deleteProgram(mTexShader.program);
+            mTexShader = null;
+        }
+        if (mGlobeTexShader != null && mGlobeTexShader.program > 0) {
+            gl.deleteProgram(mGlobeTexShader.program);
+            mGlobeTexShader = null;
+        }
+        if (mGlobeShader != null && mGlobeShader.program > 0) {
+            gl.deleteProgram(mGlobeShader.program);
+            mGlobeShader = null;
+        }
+        if (mShader != null && mShader.getProgram() > 0) {
+            gl.deleteProgram(mShader.getProgram());
+            mShader = null;
+        }
     }
 
     /**
@@ -417,11 +453,27 @@ public class TerrainTileRenderer extends TileRenderer {
             gl.depthFunc(GL.LESS);
 
             // Compute dynamic u_zlimit so height-based coloring adapts to zoom.
-            // 8000m (high peak) maps to h=1.0 in the shader regardless of zoom level.
+            // For Mercator: 8000m (high peak) maps to h=1.0 in tile-local z-units.
+            // For Globe: use the projection's sphere radius as the reference scale.
             double scale = 1L << v.pos.zoomLevel;
-            float groundScale = (float) MercatorProjection.groundResolutionWithScale(
-                    (float) v.pos.getLatitude(), scale);
-            float zLimit = 8000.0f / (groundScale * 10);
+            float zLimit;
+            if (isGlobe && mProjection != null) {
+                // Globe ECEF-relative Z is in rendering units; use sphere radius
+                zLimit = mProjection.getSphereRadius() * 0.5f;
+            } else {
+                float groundScale = (float) MercatorProjection.groundResolutionWithScale(
+                        (float) v.pos.getLatitude(), scale);
+                zLimit = 8000.0f / (groundScale * 10);
+            }
+
+            // Get sphere radius from projection (or default for backward compat)
+            float sphereRadius = (mProjection != null)
+                    ? mProjection.getSphereRadius() : 4096.0f;
+
+            // Camera position for atmosphere: approximate as above the sphere center.
+            // The vertex shader model matrix translates tiles to ECEF positions;
+            // the camera orbits at (0,0,sphereRadius*3) looking at origin.
+            float[] camPos = {0f, 0f, sphereRadius * 3f};
 
             // Set common uniforms (per-shader-variant)
             if (isGlobe) {
@@ -430,9 +482,9 @@ public class TerrainTileRenderer extends TileRenderer {
                     gl.uniform1f(mGlobeTexShader.uZLimit, zLimit);
                     GLUtils.glUniform3fv(mGlobeTexShader.uLight, 1, mSun.getPosition());
                     // Atmosphere uniforms
-                    gl.uniform1f(mGlobeTexShader.uGlobeRadius, 4096.0f);
+                    GLUtils.glUniform3fv(mGlobeTexShader.uCameraPos, 1, camPos);
                     GLUtils.glUniform4fv(mGlobeTexShader.uAtmosphereColor, 1,
-                            new float[]{0.65f, 0.78f, 0.92f, 1.0f});
+                            ATMOSPHERE_COLOR);
                     gl.uniform1f(mGlobeTexShader.uFogDensity, 0.6f);
                     if (mFallbackTex != null) {
                         mFallbackTex.bind();
@@ -442,9 +494,9 @@ public class TerrainTileRenderer extends TileRenderer {
                     gl.uniform1f(mGlobeShader.uZLimit, zLimit);
                     GLUtils.glUniform3fv(mGlobeShader.uLight, 1, mSun.getPosition());
                     // Atmosphere uniforms
-                    gl.uniform1f(mGlobeShader.uGlobeRadius, 4096.0f);
+                    GLUtils.glUniform3fv(mGlobeShader.uCameraPos, 1, camPos);
                     GLUtils.glUniform4fv(mGlobeShader.uAtmosphereColor, 1,
-                            new float[]{0.65f, 0.78f, 0.92f, 1.0f});
+                            ATMOSPHERE_COLOR);
                     gl.uniform1f(mGlobeShader.uFogDensity, 0.6f);
                 }
             } else {
@@ -631,22 +683,22 @@ public class TerrainTileRenderer extends TileRenderer {
         double centerLat = MercatorProjection.pixelYToLatitude(centerY, mapSize);
         double centerLon = MercatorProjection.pixelXToLongitude(centerX, mapSize);
 
-        // Compute tile center ECEF on sphere
+        // Compute tile center ECEF via the projection (respects its sphere radius)
         float[] ecef = new float[3];
-        org.oscim.terrain.projection.GlobeTerrainProjection.latLonToECEF(
-                (float) centerLat, (float) centerLon, 4096.0f, ecef);
+        if (mProjection != null) {
+            mProjection.getTileCenterECEF(centerLat, centerLon, ecef);
+        } else {
+            // Fallback: use the default sphere radius via static helper
+            org.oscim.terrain.projection.GlobeTerrainProjection.latLonToECEF(
+                    (float) centerLat, (float) centerLon, 4096.0f, ecef);
+        }
 
         // Model matrix: translate to tile center ECEF
         v.mvp.setTranslation(ecef[0], ecef[1], ecef[2]);
 
-        // Apply view-projection matrix
+        // Apply view-projection matrix. The caller sets the mvp uniform on the
+        // active shader in the per-tile draw loop.
         v.mvp.multiplyLhs(v.viewproj);
-
-        // Set uniform (we don't know which shader here, but caller will override if needed)
-        // Actually, the caller sets mvp via the per-iteration branches.
-        // We need uniform locations. Let's use a generic approach:
-        // This method is called before the per-eb loop which sets the mvp uniform.
-        // For now, set mvp on whichever shader is active.
     }
 
     /**

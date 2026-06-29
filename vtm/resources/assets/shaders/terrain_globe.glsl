@@ -6,20 +6,21 @@ uniform vec4 u_color;
 uniform float u_alpha;
 uniform vec3 u_light;
 uniform float u_zlimit;
-uniform float u_globeRadius;
+uniform vec3 u_cameraPos;
 attribute vec4 a_pos;
 attribute vec2 a_normal;
 varying vec4 color;
 varying vec3 v_normal;
-varying vec3 v_localPos;
+varying vec3 v_worldPos;
 
 void main() {
     vec4 pos = a_pos;
     pos.z *= u_alpha;
     gl_Position = u_mvp * pos;
 
-    // Pass tile-local position and normal to fragment for atmosphere
-    v_localPos = a_pos.xyz;
+    // Pass world-space position (ECEF-relative + model translation)
+    // and normal to fragment for view-dependent atmosphere
+    v_worldPos = a_pos.xyz;
 
     // Reconstruct face normal from packed 2-byte encoding
     vec2 enc = (a_normal / 255.0);
@@ -35,7 +36,6 @@ void main() {
     l = 0.6 + l * 0.4; // softer: range [0.2, 1.0]
 
     // Height-based color: low = dark earth, high = light/white
-    // z is in tile-local units; normalize to visible range
     float h = clamp(a_pos.z / u_zlimit, 0.0, 1.0);
 
     // Gradient: dark brown (low) -> warm brown (mid) -> light tan (high)
@@ -58,24 +58,25 @@ $$
 #ifdef GLES
 precision highp float;
 #endif
+uniform vec3 u_cameraPos;
 uniform vec4 u_atmosphereColor;
 uniform float u_fogDensity;
 varying vec4 color;
 varying vec3 v_normal;
-varying vec3 v_localPos;
+varying vec3 v_worldPos;
 
 void main() {
     // Atmosphere: blend to atmosphere color near the globe limb.
-    // The Z component of the tile-local normal approximates the angle
-    // from the sphere surface: high nz = facing camera (center of disc),
-    // low nz = near limb (tangential to view).
-    // For ECEF-relative normals, this is a reasonable approximation.
-    float limbFactor = 1.0 - abs(v_normal.z);
-    // Apply smoothstep for a more natural transition
-    float fog = smoothstep(0.15, 0.85, limbFactor) * u_fogDensity;
+    // Use the dot product of surface normal and view direction:
+    // fragments facing the camera (center of disc) = no fog,
+    // fragments near the limb (normal perpendicular to view) = full fog.
+    vec3 viewDir = normalize(u_cameraPos - v_worldPos);
+    float ndotv = abs(dot(normalize(v_normal), viewDir));
+    // limbFactor: 0 at center (facing camera), 1 at limb (tangential)
+    float limbFactor = 1.0 - ndotv;
 
-    vec3 atmosphere = vec3(0.65, 0.78, 0.92); // light blue sky
-    vec3 terrainColor = mix(color.rgb, atmosphere, fog);
+    float fog = smoothstep(0.15, 0.85, limbFactor) * u_fogDensity;
+    vec3 terrainColor = mix(color.rgb, u_atmosphereColor.rgb, fog);
 
     gl_FragColor = vec4(terrainColor, color.a);
 }
