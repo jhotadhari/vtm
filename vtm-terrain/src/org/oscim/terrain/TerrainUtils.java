@@ -109,6 +109,8 @@ public final class TerrainUtils {
         double latRange = latMax - latMin;
         double lonRange = lonMax - lonMin;
 
+        boolean isGlobe = (projection.getType() == TerrainProjection.Type.GLOBE);
+
         // Build vertex array
         for (int j = 0; j < N; j++) {
             // Geographic lat: interpolate from top to bottom (j=0 → latMax, j=N-1 → latMin)
@@ -118,10 +120,6 @@ public final class TerrainUtils {
                 // Geographic lon: interpolate from left to right (i=0 → lonMin, i=N-1 → lonMax)
                 double lon = lonMin + (i / (double) (N - 1)) * lonRange;
 
-                // Tile-local x, y
-                float tx = i * step;
-                float ty = j * step;
-
                 // Query elevation
                 float elevMeters = elevationSampler.getElevation((float) lat, (float) lon);
 
@@ -129,18 +127,30 @@ public final class TerrainUtils {
                 // Check no-data sentinel BEFORE multiplying by exaggeration,
                 // otherwise Short.MIN_VALUE * exag ≠ Short.MIN_VALUE and the
                 // guard inside elevToTileZ() is silently bypassed.
-                float tz;
-                if (elevMeters == Short.MIN_VALUE) {
-                    tz = projection.elevToTileZ(elevMeters, lat, tileScale);
-                } else {
-                    tz = projection.elevToTileZ(elevMeters * exaggeration, lat, tileScale);
+                float elev = elevMeters;
+                if (elevMeters != Short.MIN_VALUE) {
+                    elev = elevMeters * exaggeration;
                 }
 
-                // Store vertex
                 int vIdx = (j * N + i) * 3;
-                points[vIdx + 0] = tx;
-                points[vIdx + 1] = ty;
-                points[vIdx + 2] = tz;
+
+                if (isGlobe) {
+                    // Globe: projection computes all 3 coordinates (ECEF-relative)
+                    float[] xyz = new float[3];
+                    projection.project((float) lat, (float) lon, elev,
+                            tileOriginX, tileOriginY, tileMapSize, xyz);
+                    points[vIdx + 0] = xyz[0];
+                    points[vIdx + 1] = xyz[1];
+                    points[vIdx + 2] = xyz[2];
+                } else {
+                    // Mercator: flat grid positions, only Z through projection
+                    float tx = i * step;
+                    float ty = j * step;
+                    float tz = projection.elevToTileZ(elev, lat, tileScale);
+                    points[vIdx + 0] = tx;
+                    points[vIdx + 1] = ty;
+                    points[vIdx + 2] = tz;
+                }
             }
         }
 
@@ -168,7 +178,8 @@ public final class TerrainUtils {
         // Compute per-vertex gradient normals for seamless tile boundaries
         short[] normals = computeTerrainNormals(projection, N, step, points,
                 latMin, latMax, lonMin, lonMax,
-                elevationSampler, exaggeration, tileScale);
+                elevationSampler, exaggeration, tileScale,
+                tileOriginX, tileOriginY, tileMapSize);
 
         // Build GeometryBuffer
         GeometryBuffer gb = new GeometryBuffer(vertexCount, indexCount);
@@ -191,6 +202,10 @@ public final class TerrainUtils {
      * step beyond the tile so that adjacent tiles compute the same gradient
      * at shared edges and corners.
      * <p>
+     * For globe projections, boundary neighbor positions use the full 3D
+     * {@link TerrainProjection#project} method to correctly account for
+     * sphere curvature.
+     * <p>
      * The normal packing matches {@code ExtrusionBucket.addMesh}:
      * two bytes encoding nx, ny, with the LSB of the first byte encoding
      * the sign of nz.
@@ -204,7 +219,9 @@ public final class TerrainUtils {
             double lonMin, double lonMax,
             ElevationSampler elevationSampler,
             float exaggeration,
-            double tileScale) {
+            double tileScale,
+            double tileOriginX, double tileOriginY,
+            long tileMapSize) {
 
         short[] normals = new short[N * N];
         double latRange = latMax - latMin;
@@ -213,6 +230,8 @@ public final class TerrainUtils {
         // Grid step sizes in geographic coordinates
         double latStep = latRange / (N - 1);
         double lonStep = lonRange / (N - 1);
+
+        boolean isGlobe = (projection.getType() == TerrainProjection.Type.GLOBE);
 
         // Normal direction mask: clear LSB, then set from nz sign
         final int NORMAL_DIR_MASK = 0xFFFFFFFE;
@@ -231,24 +250,18 @@ public final class TerrainUtils {
                 if (i < N - 1) {
                     zRight = points[(j * N + (i + 1)) * 3 + 2];
                 } else {
-                    // Right boundary: query one grid step beyond the tile
-                    double lonBeyond = lonMax + lonStep;
-                    float elev = elevationSampler.getElevation((float) lat, (float) lonBeyond);
-                    zRight = (elev == Short.MIN_VALUE)
-                            ? projection.elevToTileZ(elev, lat, tileScale)
-                            : projection.elevToTileZ(elev * exaggeration, lat, tileScale);
+                    zRight = getBoundaryZ(projection, lat, lonMax + lonStep,
+                            elevationSampler, exaggeration, tileScale, isGlobe,
+                            tileOriginX, tileOriginY, tileMapSize);
                 }
 
                 float zLeft;
                 if (i > 0) {
                     zLeft = points[(j * N + (i - 1)) * 3 + 2];
                 } else {
-                    // Left boundary: query one grid step beyond the tile
-                    double lonBeyond = lonMin - lonStep;
-                    float elev = elevationSampler.getElevation((float) lat, (float) lonBeyond);
-                    zLeft = (elev == Short.MIN_VALUE)
-                            ? projection.elevToTileZ(elev, lat, tileScale)
-                            : projection.elevToTileZ(elev * exaggeration, lat, tileScale);
+                    zLeft = getBoundaryZ(projection, lat, lonMin - lonStep,
+                            elevationSampler, exaggeration, tileScale, isGlobe,
+                            tileOriginX, tileOriginY, tileMapSize);
                 }
 
                 float gx = (zRight - zLeft) / (2.0f * step);
@@ -259,24 +272,18 @@ public final class TerrainUtils {
                 if (j < N - 1) {
                     zDown = points[((j + 1) * N + i) * 3 + 2];
                 } else {
-                    // Bottom boundary: query one grid step beyond the tile
-                    double latBeyond = latMin - latStep;
-                    float elev = elevationSampler.getElevation((float) latBeyond, (float) lon);
-                    zDown = (elev == Short.MIN_VALUE)
-                            ? projection.elevToTileZ(elev, latBeyond, tileScale)
-                            : projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
+                    zDown = getBoundaryZ(projection, latMin - latStep, lon,
+                            elevationSampler, exaggeration, tileScale, isGlobe,
+                            tileOriginX, tileOriginY, tileMapSize);
                 }
 
                 float zUp;
                 if (j > 0) {
                     zUp = points[((j - 1) * N + i) * 3 + 2];
                 } else {
-                    // Top boundary: query one grid step beyond the tile
-                    double latBeyond = latMax + latStep;
-                    float elev = elevationSampler.getElevation((float) latBeyond, (float) lon);
-                    zUp = (elev == Short.MIN_VALUE)
-                            ? projection.elevToTileZ(elev, latBeyond, tileScale)
-                            : projection.elevToTileZ(elev * exaggeration, latBeyond, tileScale);
+                    zUp = getBoundaryZ(projection, latMax + latStep, lon,
+                            elevationSampler, exaggeration, tileScale, isGlobe,
+                            tileOriginX, tileOriginY, tileMapSize);
                 }
 
                 float gy = (zDown - zUp) / (2.0f * step);
@@ -295,6 +302,35 @@ public final class TerrainUtils {
         }
 
         return normals;
+    }
+
+    /**
+     * Returns the Z component of a boundary-neighbor sample point.
+     * For globe projections, uses {@link TerrainProjection#project} to get
+     * the full 3D ECEF-relative position. For Mercator, uses the simpler
+     * {@link TerrainProjection#elevToTileZ} path.
+     */
+    private static float getBoundaryZ(TerrainProjection projection,
+                                       double lat, double lon,
+                                       ElevationSampler elevationSampler,
+                                       float exaggeration,
+                                       double tileScale,
+                                       boolean isGlobe,
+                                       double tileOriginX, double tileOriginY,
+                                       long tileMapSize) {
+        float elev = elevationSampler.getElevation((float) lat, (float) lon);
+        if (elev != Short.MIN_VALUE) {
+            elev *= exaggeration;
+        }
+
+        if (isGlobe) {
+            float[] xyz = new float[3];
+            projection.project((float) lat, (float) lon, elev,
+                    tileOriginX, tileOriginY, tileMapSize, xyz);
+            return xyz[2];
+        } else {
+            return projection.elevToTileZ(elev, lat, tileScale);
+        }
     }
 
     /**
