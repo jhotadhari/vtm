@@ -393,16 +393,36 @@ public abstract class Map implements TaskQueue {
      */
     public void setGlobeMode(boolean enabled, float sphereRadius) {
         if (enabled && !(mViewport instanceof GlobeViewController)) {
+            // Snapshot current viewport dimensions and position before swap
+            float oldWidth = mViewport.mWidth;
+            float oldHeight = mViewport.mHeight;
+            MapPosition pos = new MapPosition();
+            mViewport.getMapPosition(pos);
+
             GlobeViewController globeVC = new GlobeViewController(sphereRadius);
-            // Copy current position state
-            globeVC.setMapPosition(mMapPosition);
+            globeVC.setMapPosition(pos);
             mViewport = globeVC;
+
+            // Reapply view size so projection matrices are built immediately.
+            // Without this, the new controller has 0x0 dimensions and identity
+            // matrices until the next resize event (which may never fire).
+            if (oldWidth > 0 && oldHeight > 0) {
+                globeVC.setViewSize((int) oldWidth, (int) oldHeight);
+            }
         } else if (!enabled && mViewport instanceof GlobeViewController) {
+            float oldWidth = mViewport.mWidth;
+            float oldHeight = mViewport.mHeight;
+            MapPosition pos = new MapPosition();
+            mViewport.getMapPosition(pos);
+
             ViewController flatVC = new ViewController();
-            flatVC.setMapPosition(mMapPosition);
+            flatVC.setMapPosition(pos);
             mViewport = flatVC;
+
+            if (oldWidth > 0 && oldHeight > 0) {
+                flatVC.setViewSize((int) oldWidth, (int) oldHeight);
+            }
         }
-        // Note: setViewSize must be called after this to rebuild projection
     }
 
     /**

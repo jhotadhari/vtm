@@ -17,6 +17,7 @@ package org.oscim.map;
 import org.oscim.core.GeoPoint;
 import org.oscim.core.MercatorProjection;
 import org.oscim.core.Point;
+import org.oscim.core.Tile;
 import org.oscim.renderer.GLMatrix;
 import org.oscim.utils.FastMath;
 
@@ -48,17 +49,35 @@ public class GlobeViewController extends ViewController {
     /** Far plane distance — must see the entire sphere from orbit. */
     private static final float GLOBE_VIEW_FAR = 30000f;
 
-    /** Camera distance at minimum zoom (fully zoomed out). */
-    private static final float DISTANCE_FAR = DEFAULT_SPHERE_RADIUS * 4.0f;
+    /** Camera distance multiplier at minimum zoom (fully zoomed out). */
+    private static final float DISTANCE_FAR_MULTIPLIER = 4.0f;
 
-    /** Camera distance at maximum zoom (fully zoomed in). */
-    private static final float DISTANCE_NEAR = DEFAULT_SPHERE_RADIUS * 1.02f;
+    /** Camera distance multiplier at maximum zoom (fully zoomed in). */
+    private static final float DISTANCE_NEAR_MULTIPLIER = 1.02f;
+
+    /** Maximum orbit latitude in degrees (avoids lookAt pole singularity). */
+    private static final double MAX_ORBIT_LATITUDE = 70.0;
+
+    /** Orbit sensitivity divisor for pan gestures. */
+    private static final double ORBIT_SENSITIVITY = 0.5;
 
     /** Sphere radius in rendering units. */
     private final float mSphereRadius;
 
+    /** Camera distance at minimum zoom — computed from mSphereRadius. */
+    private final float mDistanceFar;
+
+    /** Camera distance at maximum zoom — computed from mSphereRadius. */
+    private final float mDistanceNear;
+
     private final float[] mMatTemp = new float[16];
     private final float[] mCameraPos = new float[3];
+
+    /** Last known view width for re-application after setGlobeMode. */
+    private int mLastWidth;
+
+    /** Last known view height for re-application after setGlobeMode. */
+    private int mLastHeight;
 
     public GlobeViewController() {
         this(DEFAULT_SPHERE_RADIUS);
@@ -66,6 +85,8 @@ public class GlobeViewController extends ViewController {
 
     public GlobeViewController(float sphereRadius) {
         mSphereRadius = sphereRadius;
+        mDistanceFar = sphereRadius * DISTANCE_FAR_MULTIPLIER;
+        mDistanceNear = sphereRadius * DISTANCE_NEAR_MULTIPLIER;
         // Override parent limits for globe mode
         mMaxTilt = 80;   // Camera can look down more
         mMinTilt = 10;   // Minimum elevation above horizon
@@ -77,6 +98,8 @@ public class GlobeViewController extends ViewController {
 
     @Override
     public void setViewSize(int width, int height) {
+        mLastWidth = width;
+        mLastHeight = height;
         mHeight = height;
         mWidth = width;
 
@@ -104,6 +127,14 @@ public class GlobeViewController extends ViewController {
         updateMatrices();
     }
 
+    /**
+     * Returns true if setViewSize has been called at least once
+     * (i.e., the projection matrices have been built).
+     */
+    public boolean isViewSized() {
+        return mLastWidth > 0 && mLastHeight > 0;
+    }
+
     // ─────────────────────────────────────────────
     // Camera position from orbit parameters
     // ─────────────────────────────────────────────
@@ -118,9 +149,9 @@ public class GlobeViewController extends ViewController {
 
         // Orbit angles from MapPosition
         // x in [0,1] maps to orbit longitude [0, 360]
-        // y in [0,1] maps to orbit latitude [-MAX_LAT, MAX_LAT]
+        // y in [0,1] maps to orbit latitude [-MAX, MAX]
         double orbitLon = mPos.x * 360.0;
-        double orbitLat = (mPos.y - 0.5) * 2.0 * 70.0; // ±70° range
+        double orbitLat = (mPos.y - 0.5) * 2.0 * MAX_ORBIT_LATITUDE;
         double orbitLatRad = Math.toRadians(orbitLat);
         double orbitLonRad = Math.toRadians(orbitLon);
 
@@ -135,10 +166,10 @@ public class GlobeViewController extends ViewController {
      * Low zoom (zoomed out) → far distance. High zoom → near distance.
      */
     private double getCameraDistance() {
-        // Map scale range [mMinScale, mMaxScale] to distance range [DISTANCE_FAR, DISTANCE_NEAR]
+        // Map scale range [mMinScale, mMaxScale] to distance range [mDistanceFar, mDistanceNear]
         double t = (mPos.scale - mMinScale) / (mMaxScale - mMinScale);
         t = FastMath.clamp(t, 0.0, 1.0);
-        return DISTANCE_FAR - t * (DISTANCE_FAR - DISTANCE_NEAR);
+        return mDistanceFar - t * (mDistanceFar - mDistanceNear);
     }
 
     // ─────────────────────────────────────────────
@@ -150,7 +181,7 @@ public class GlobeViewController extends ViewController {
         // Camera position in world space (sphere center = origin)
         getCameraPosition(mCameraPos);
 
-        // Look-at point: sphere center (0, 0, 0) with tilt/bearing offset
+        // Look-at point: sphere center (0, 0, 0)
         float centerX = 0f;
         float centerY = 0f;
         float centerZ = 0f;
@@ -168,7 +199,7 @@ public class GlobeViewController extends ViewController {
 
         mViewMatrix.set(mMatTemp);
 
-        // Apply bearing (rotation around look-at axis) and tilt
+        // Apply bearing (rotation around look-at axis)
         if (mPos.bearing != 0) {
             mRotationMatrix.setRotation(mPos.bearing, 0, 0, 1);
             mViewMatrix.multiplyLhs(mRotationMatrix);
@@ -191,12 +222,48 @@ public class GlobeViewController extends ViewController {
     // Navigation — map to orbit controls
     // ─────────────────────────────────────────────
 
+    /**
+     * Overrides parent moveTo to call updateMatrices after position change.
+     * The parent moveTo only mutates mPos and does not refresh the view
+     * matrix, which is required for globe mode (camera position depends on mPos).
+     */
+    @Override
+    void moveTo(double x, double y) {
+        mPos.x = x;
+        mPos.y = y;
+
+        /* clamp latitude */
+        mPos.y = FastMath.clamp(mPos.y, 0, 1);
+
+        /* wrap longitude */
+        while (mPos.x > 1)
+            mPos.x -= 1;
+        while (mPos.x < 0)
+            mPos.x += 1;
+
+        /* limit longitude */
+        if (mPos.x > mMaxX)
+            mPos.x = mMaxX;
+        else if (mPos.x < mMinX)
+            mPos.x = mMinX;
+        /* limit latitude */
+        if (mPos.y > mMaxY)
+            mPos.y = mMaxY;
+        else if (mPos.y < mMinY)
+            mPos.y = mMinY;
+
+        // Globe: camera position depends on mPos, refresh view matrix
+        updateMatrices();
+    }
+
     @Override
     public synchronized void moveMap(float mx, float my) {
-        // Pan = orbit the globe
-        double orbitSensitivity = 0.5 / mPos.scale;
-        mPos.x -= mx * orbitSensitivity;
-        mPos.y -= my * orbitSensitivity;
+        // Counter-rotate pan vector by map bearing so screen drag direction
+        // matches map direction (same behavior as parent ViewController)
+        ViewController.applyRotation(mx, my, mPos.bearing, mMovePoint);
+        double orbitSensitivity = ORBIT_SENSITIVITY / mPos.scale;
+        mPos.x -= mMovePoint.x * orbitSensitivity;
+        mPos.y -= mMovePoint.y * orbitSensitivity;
         clampPosition();
         updateMatrices();
     }
@@ -221,9 +288,19 @@ public class GlobeViewController extends ViewController {
         newScale = FastMath.clamp(newScale, mMinScale, mMaxScale);
         if (newScale == mPos.scale)
             return false;
+
         mPos.scale = newScale;
         mPos.zoomLevel = FastMath.log2((int) mPos.scale);
-        updateMatrices();
+
+        // Adjust orbit position so zoom centers on the pivot point,
+        // matching the parent ViewController behavior
+        if (pivotX != 0 || pivotY != 0) {
+            pivotX -= mWidth * mPivotX;
+            pivotY -= mHeight * mPivotY;
+            moveMap(pivotX * (1.0f - scale), pivotY * (1.0f - scale));
+        } else {
+            updateMatrices();
+        }
         return true;
     }
 
@@ -287,9 +364,10 @@ public class GlobeViewController extends ViewController {
         float disc = b * b - 4f * a * c;
 
         if (disc < 0 || a < 0.0001f) {
-            // No intersection — ray misses sphere. Fall back to near-plane.
-            coords[position + 0] = nx;
-            coords[position + 1] = ny;
+            // No intersection — ray misses sphere. Return sentinel values
+            // so callers can detect the miss (NaN signals no hit).
+            coords[position + 0] = Float.NaN;
+            coords[position + 1] = Float.NaN;
             return;
         }
 
@@ -339,6 +417,42 @@ public class GlobeViewController extends ViewController {
                 MercatorProjection.toLongitude(mMovePoint.x));
     }
 
+    /**
+     * Projects a map coordinate to screen pixel position.
+     * Overrides the flat-plane Viewport.toScreenPoint with a globe-aware
+     * version that accounts for the sphere projection.
+     */
+    @Override
+    public synchronized void toScreenPoint(double x, double y, boolean relativeToCenter, Point out) {
+        // Convert Mercator [0,1] to geographic
+        double lat = MercatorProjection.toLatitude(y);
+        double lon = MercatorProjection.toLongitude(x);
+
+        // Convert geographic to ECEF on the sphere surface
+        double latRad = Math.toRadians(lat);
+        double lonRad = Math.toRadians(lon);
+        double cosLat = Math.cos(latRad);
+        float wx = (float) (mSphereRadius * cosLat * Math.cos(lonRad));
+        float wy = (float) (mSphereRadius * cosLat * Math.sin(lonRad));
+        float wz = (float) (mSphereRadius * Math.sin(latRad));
+
+        // Project through view-projection matrix
+        mv[0] = wx;
+        mv[1] = wy;
+        mv[2] = wz;
+        mv[3] = 1;
+
+        mViewProjMatrix.prj(mv);
+
+        out.x = (mv[0] * (mWidth / 2));
+        out.y = -(mv[1] * (mHeight / 2));
+
+        if (!relativeToCenter) {
+            out.x += mWidth / 2;
+            out.y += mHeight / 2;
+        }
+    }
+
     // ─────────────────────────────────────────────
     // Getters
     // ─────────────────────────────────────────────
@@ -346,5 +460,15 @@ public class GlobeViewController extends ViewController {
     /** Returns the sphere radius used by this controller. */
     public float getSphereRadius() {
         return mSphereRadius;
+    }
+
+    /** Returns the last known view width (0 if setViewSize not yet called). */
+    public int getLastWidth() {
+        return mLastWidth;
+    }
+
+    /** Returns the last known view height (0 if setViewSize not yet called). */
+    public int getLastHeight() {
+        return mLastHeight;
     }
 }

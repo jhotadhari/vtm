@@ -84,9 +84,9 @@ public class TerrainTileLayer extends TileLayer {
      * is created, and used by building/label/road layers to sample terrain
      * height at arbitrary positions.
      */
-    private static ElevationAPI sElevationAPI;
-    private static TerrainProjection sProjection;
-    private static float sBaseElevation;
+    private static volatile ElevationAPI sElevationAPI;
+    private static volatile TerrainProjection sProjection;
+    private static volatile float sBaseElevation;
 
     /**
      * Minimal TileData wrapper for storing a TextureItem on a MapTile.
@@ -359,9 +359,6 @@ public class TerrainTileLayer extends TileLayer {
             }
         });
     }
-
-    /** Cached reference to the active renderer for projection type sync. */
-    private static TerrainTileRenderer mActiveRenderer;
 
     /**
      * Returns true if the terrain elevation query API is available.

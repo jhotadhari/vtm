@@ -39,8 +39,13 @@ public class ElevationProvider {
          * Converts elevation in meters to a globe radial offset in rendering units.
          * For flat Mercator this returns the same as {@link #metersToTileZ}.
          * For globe this returns {@code meters / EARTH_RADIUS * sphereRadius}.
+         * <p>
+         * Default implementation delegates to {@link #metersToTileZ} with
+         * lat=0, scale=1 for backward compatibility.
          */
-        float metersToTileZGlobe(float meters);
+        default float metersToTileZGlobe(float meters) {
+            return metersToTileZ(meters, 0, 1);
+        }
     }
 
     private static volatile Sampler sInstance;
