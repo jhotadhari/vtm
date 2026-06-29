@@ -47,7 +47,7 @@ import org.oscim.tiling.TileSource;
 public class TerrainTileSource extends TileSource {
 
     private final DemFolder mDemFolder;
-    private final TerrainProjection mProjection;
+    private TerrainProjection mProjection;
     private float mElevationExaggeration = 5.0f;
     private float mBaseElevation = 3800f; // Andes plateau baseline in meters
     private int mTerrainColor = Color.get(180, 160, 140, 255);
@@ -84,6 +84,12 @@ public class TerrainTileSource extends TileSource {
 
     public TerrainProjection getProjection() {
         return mProjection;
+    }
+
+    /** Sets the terrain projection (e.g., Mercator or Globe). */
+    public TerrainTileSource setProjection(TerrainProjection projection) {
+        mProjection = projection;
+        return this;
     }
 
     /** Sets the elevation exaggeration factor (default 3.0). */

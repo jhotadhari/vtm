@@ -42,6 +42,7 @@ import org.oscim.scalebar.*;
 import org.oscim.theme.ExternalRenderTheme;
 import org.oscim.theme.internal.VtmThemes;
 import org.oscim.terrain.layer.TerrainTileLayer;
+import org.oscim.terrain.projection.GlobeTerrainProjection;
 import org.oscim.terrain.tiling.TerrainTileSource;
 import org.oscim.tiling.source.bitmap.BitmapTileSource;
 import org.oscim.tiling.source.hills.HillshadingTileSource;
@@ -75,6 +76,7 @@ public class MapsforgeTest extends GdxMapApp {
     private float mBaseElevation = 0f;
     private boolean mRasterDrape = false;
     private float mTexMix = 0.8f;
+    private boolean mGlobeMode = false;
     private DemFolderFS mDemFolderRef; // kept for layer recreation
     private MultiMapFileTileSource mMapFileSource; // kept for vector drape
 
@@ -202,7 +204,9 @@ public class MapsforgeTest extends GdxMapApp {
         System.out.println("F10 = increase exaggeration (+5)");
         System.out.println("F11 = lower base elevation (-500m)");
         System.out.println("F12 = raise base elevation (+500m)");
-        System.out.println("Current: exaggeration=" + mExaggeration + "x baseElev=" + mBaseElevation + "m");
+        System.out.println("G   = toggle globe projection ON/OFF");
+        System.out.println("Current: exaggeration=" + mExaggeration + "x baseElev=" + mBaseElevation + "m"
+                + " globe=" + (mGlobeMode ? "ON" : "OFF"));
     }
 
     private void addTerrainLayer() {
@@ -224,6 +228,14 @@ public class MapsforgeTest extends GdxMapApp {
                 .setBaseElevation(mBaseElevation)
                 .setTerrainColor(Color.get(220, 80, 60, 255))
                 .setTexMix(mTexMix);
+
+        // When globe mode is active, use GlobeTerrainProjection
+        if (mGlobeMode) {
+            terrainSource.setProjection(new GlobeTerrainProjection(4096.0f));
+            mMap.setGlobeMode(true, 4096.0f);
+        } else {
+            mMap.setGlobeMode(false);
+        }
 
         // Wire raster texture draping when enabled
         if (mRasterDrape) {
@@ -361,6 +373,13 @@ public class MapsforgeTest extends GdxMapApp {
             // Increase base elevation (lifts terrain above map)
             mBaseElevation += 500;
             addTerrainLayer();
+            return true;
+        }
+        if (keycode == Input.Keys.G) {
+            // Toggle globe projection mode
+            mGlobeMode = !mGlobeMode;
+            addTerrainLayer();
+            System.out.println("Globe projection: " + (mGlobeMode ? "ON" : "OFF"));
             return true;
         }
 
