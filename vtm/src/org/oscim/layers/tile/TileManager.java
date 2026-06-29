@@ -74,7 +74,7 @@ public class TileManager {
     private static final int CACHE_CLEAR_THRESHOLD = 10;
 
     private final Map mMap;
-    private final Viewport mViewport;
+    private Viewport mViewport;
 
     /**
      * cache for all tiles
@@ -301,6 +301,14 @@ public class TileManager {
             tileZoom = match;
         }
         mPrevZoomlevel = tileZoom;
+
+        // Re-fetch the viewport in case Map.setGlobeMode() swapped it.
+        // Otherwise we would use a stale flat ViewController after a
+        // globe toggle, computing visible-area bounds on the wrong surface.
+        Viewport currentViewport = mMap.viewport();
+        if (currentViewport != mViewport) {
+            mViewport = currentViewport;
+        }
 
         mViewport.getMapExtents(mMapPlane, Tile.SIZE / 2);
 

@@ -36,7 +36,7 @@ import java.util.List;
 
 public class InputHandler implements InputProcessor {
 
-    private final ViewController mViewport;
+    private ViewController mViewport;
     private final Map mMap;
     private GenericLayer mGridLayer;
     private final GdxMap mGdxApp;
@@ -45,6 +45,15 @@ public class InputHandler implements InputProcessor {
         mMap = map.getMap();
         mViewport = mMap.viewport();
         mGdxApp = map;
+    }
+
+    /** Re-fetches the viewport from Map in case setGlobeMode() swapped it. */
+    private ViewController getViewport() {
+        ViewController current = mMap.viewport();
+        if (current != mViewport) {
+            mViewport = current;
+        }
+        return mViewport;
     }
 
     private boolean mActiveScale;
@@ -78,27 +87,27 @@ public class InputHandler implements InputProcessor {
                 break;
 
             case Input.Keys.UP:
-                mViewport.moveMap(0, 50);
+                getViewport().moveMap(0, 50);
                 mMap.updateMap(true);
                 break;
             case Input.Keys.DOWN:
-                mViewport.moveMap(0, -50);
+                getViewport().moveMap(0, -50);
                 mMap.updateMap(true);
                 break;
             case Input.Keys.LEFT:
-                mViewport.moveMap(50, 0);
+                getViewport().moveMap(50, 0);
                 mMap.updateMap(true);
                 break;
             case Input.Keys.RIGHT:
-                mViewport.moveMap(-50, 0);
+                getViewport().moveMap(-50, 0);
                 mMap.updateMap(true);
                 break;
             case Input.Keys.D:
-                mViewport.scaleMap(1.05f, 0, 0);
+                getViewport().scaleMap(1.05f, 0, 0);
                 mMap.updateMap(true);
                 break;
             case Input.Keys.A:
-                mViewport.scaleMap(0.95f, 0, 0);
+                getViewport().scaleMap(0.95f, 0, 0);
                 mMap.updateMap(true);
                 break;
             case Input.Keys.S:
@@ -237,20 +246,20 @@ public class InputHandler implements InputProcessor {
             return false;
 
         if (mActiveTilt) {
-            changed = mViewport.tiltMap((screenY - mPosY) / 5f);
+            changed = getViewport().tiltMap((screenY - mPosY) / 5f);
             mPosY = screenY;
 
         }
 
         if (mActiveScale) {
-            changed = mViewport.scaleMap(1 - (screenY - mPosY) / 100f, 0, 0);
+            changed = getViewport().scaleMap(1 - (screenY - mPosY) / 100f, 0, 0);
             mPosY = screenY;
         }
 
         if (mActiveRotate) {
-            mViewport.rotateMap((screenX - mPosX) / 500f, 0, 0);
+            getViewport().rotateMap((screenX - mPosX) / 500f, 0, 0);
             mPosX = screenX;
-            mViewport.tiltMap((screenY - mPosY) / 10f);
+            getViewport().tiltMap((screenY - mPosY) / 10f);
             mPosY = screenY;
             changed = true;
         }
