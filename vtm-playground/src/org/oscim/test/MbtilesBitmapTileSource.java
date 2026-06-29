@@ -50,9 +50,17 @@ public class MbtilesBitmapTileSource extends TileSource {
         mPath = path;
     }
 
+    private MbtilesDataSource mSharedDataSource;
+
     @Override
     public ITileDataSource getDataSource() {
-        return new MbtilesDataSource(mPath);
+        // Share a single data source — queries are sequential on the
+        // terrain-raster single-thread executor, and opening a new SQLite
+        // connection per tile is prohibitively slow (especially for large files).
+        if (mSharedDataSource == null) {
+            mSharedDataSource = new MbtilesDataSource(mPath);
+        }
+        return mSharedDataSource;
     }
 
     @Override
@@ -73,6 +81,10 @@ public class MbtilesBitmapTileSource extends TileSource {
 
     @Override
     public void close() {
+        if (mSharedDataSource != null) {
+            mSharedDataSource.closeConnection();
+            mSharedDataSource = null;
+        }
     }
 
     private Connection openConnection() throws SQLException {
@@ -88,6 +100,9 @@ public class MbtilesBitmapTileSource extends TileSource {
         MbtilesDataSource(String path) {
             mPath = path;
         }
+
+        private int mQueryCount;
+        private int mHitCount;
 
         @Override
         public void query(MapTile tile, ITileDataSink sink) {
@@ -105,27 +120,48 @@ public class MbtilesBitmapTileSource extends TileSource {
                 mStatement.setInt(2, tile.tileX);
                 mStatement.setInt(3, tmsY);
 
+                mQueryCount++;
                 try (ResultSet rs = mStatement.executeQuery()) {
                     if (rs.next()) {
+                        mHitCount++;
                         byte[] data = rs.getBytes("tile_data");
                         if (data != null && data.length > 0) {
                             Bitmap bitmap = CanvasAdapter.decodeBitmap(
                                     new ByteArrayInputStream(data));
                             if (bitmap != null) {
                                 sink.setTileImage(bitmap);
+                                if (mHitCount <= 3) {
+                                    log.info("MBTiles: tile " + tile + " → "
+                                            + data.length + " bytes bitmap OK "
+                                            + "(hit #" + mHitCount + "/" + mQueryCount + ")");
+                                }
+                            } else if (mQueryCount <= 3) {
+                                log.warning("MBTiles: decodeBitmap returned null for " + tile
+                                        + " (" + data.length + " bytes)");
                             }
+                        } else if (mQueryCount <= 3) {
+                            log.warning("MBTiles: empty tile_data for " + tile);
                         }
+                    } else if (mQueryCount <= 5) {
+                        log.fine("MBTiles: no tile at " + tile + " (TMS y=" + tmsY + ")");
                     }
                 }
                 sink.completed(QueryResult.SUCCESS);
             } catch (Exception e) {
-                log.fine("MBTiles: query failed for " + tile + ": " + e);
+                log.severe("MBTiles: query failed for " + tile + ": " + e);
+                e.printStackTrace();
                 sink.completed(QueryResult.FAILED);
             }
         }
 
         @Override
         public void dispose() {
+            // Don't close the shared connection — it's reused across queries.
+            // The connection is closed when the TileSource.close() is called
+            // or when the JVM exits.
+        }
+
+        void closeConnection() {
             try {
                 if (mStatement != null) mStatement.close();
                 if (mConnection != null) mConnection.close();
