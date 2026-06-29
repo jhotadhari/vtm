@@ -106,7 +106,7 @@ public class MbtilesBitmapTileSource extends TileSource {
         private boolean mLoggedFirst;
 
         @Override
-        public void query(MapTile tile, ITileDataSink sink) {
+        public synchronized void query(MapTile tile, ITileDataSink sink) {
             try {
                 if (!mLoggedFirst) {
                     System.out.println("MBTILES: first query for " + tile
