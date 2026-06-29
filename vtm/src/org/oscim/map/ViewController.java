@@ -32,8 +32,8 @@ import static org.oscim.utils.FastMath.clamp;
 
 public class ViewController extends Viewport {
 
-    private float mPivotX = 0.0f;
-    private float mPivotY = 0.0f;
+    protected float mPivotX = 0.0f;
+    protected float mPivotY = 0.0f;
 
     private final float[] mat = new float[16];
 
@@ -297,7 +297,7 @@ public class ViewController extends Viewport {
         updateMatrices();
     }
 
-    private void updateMatrices() {
+    protected void updateMatrices() {
         /* - view matrix:
          * 0. apply yaw
          * 1. apply roll

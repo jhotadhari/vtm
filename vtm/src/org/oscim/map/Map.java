@@ -115,7 +115,7 @@ public abstract class Map implements TaskQueue {
     public final EventDispatcher<UpdateListener, MapPosition> events;
 
     private final Layers mLayers;
-    private final ViewController mViewport;
+    private ViewController mViewport;
     private final AsyncExecutor mAsyncExecutor;
 
     protected final Animator mAnimator;
@@ -380,6 +380,44 @@ public abstract class Map implements TaskQueue {
      */
     public ViewController viewport() {
         return mViewport;
+    }
+
+    /**
+     * Switches the map between flat Mercator (default) and globe rendering mode.
+     * When enabled, replaces the flat-plane {@link ViewController} with an
+     * orbital {@link GlobeViewController}. When disabled, restores the default
+     * {@link ViewController}.
+     *
+     * @param enabled true for globe mode, false for flat Mercator
+     * @param sphereRadius rendering-space radius of the globe (e.g. 4096.0)
+     */
+    public void setGlobeMode(boolean enabled, float sphereRadius) {
+        if (enabled && !(mViewport instanceof GlobeViewController)) {
+            GlobeViewController globeVC = new GlobeViewController(sphereRadius);
+            // Copy current position state
+            globeVC.setMapPosition(mMapPosition);
+            mViewport = globeVC;
+        } else if (!enabled && mViewport instanceof GlobeViewController) {
+            ViewController flatVC = new ViewController();
+            flatVC.setMapPosition(mMapPosition);
+            mViewport = flatVC;
+        }
+        // Note: setViewSize must be called after this to rebuild projection
+    }
+
+    /**
+     * Switches the map to globe mode with the default sphere radius (4096.0).
+     * @see #setGlobeMode(boolean, float)
+     */
+    public void setGlobeMode(boolean enabled) {
+        setGlobeMode(enabled, 4096.0f);
+    }
+
+    /**
+     * Returns true if the map is currently in globe rendering mode.
+     */
+    public boolean isGlobeMode() {
+        return mViewport instanceof GlobeViewController;
     }
 
     /**
