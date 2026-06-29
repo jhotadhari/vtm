@@ -72,7 +72,7 @@ public class MapsforgeTest extends GdxMapApp {
     private boolean mHillshadeVisible = true;
     private boolean mBaseVisible = true;
     private float mExaggeration = 5.0f;
-    private float mBaseElevation = 3800f;
+    private float mBaseElevation = 0f;
     private boolean mRasterDrape = false;
     private float mTexMix = 0.8f;
     private DemFolderFS mDemFolderRef; // kept for layer recreation
@@ -192,6 +192,17 @@ public class MapsforgeTest extends GdxMapApp {
                 }
             });
         }
+
+        System.out.println("=== TERRAIN KEYS ===");
+        System.out.println("F5  = toggle raster drape / reload theme");
+        System.out.println("F6  = toggle terrain ON/OFF");
+        System.out.println("F7  = toggle hillshade ON/OFF");
+        System.out.println("F8  = toggle base map ON/OFF");
+        System.out.println("F9  = decrease exaggeration (-5)");
+        System.out.println("F10 = increase exaggeration (+5)");
+        System.out.println("F11 = lower base elevation (-500m)");
+        System.out.println("F12 = raise base elevation (+500m)");
+        System.out.println("Current: exaggeration=" + mExaggeration + "x baseElev=" + mBaseElevation + "m");
     }
 
     private void addTerrainLayer() {
@@ -239,7 +250,9 @@ public class MapsforgeTest extends GdxMapApp {
 
         mMap.updateMap(true);
         System.out.println("TERRAIN: exaggeration = " + mExaggeration + "x"
-                + ", drape = " + (mRasterDrape ? "ON" : "OFF"));
+                + ", baseElev = " + mBaseElevation + "m"
+                + ", drape = " + (mRasterDrape ? "ON" : "OFF")
+                + ", texMix = " + mTexMix);
     }
 
     /**
