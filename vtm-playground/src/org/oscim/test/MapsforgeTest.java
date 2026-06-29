@@ -255,7 +255,15 @@ public class MapsforgeTest extends GdxMapApp {
             TileSource rasterSource = createRasterSource();
             if (rasterSource != null) {
                 terrainSource.setRasterSource(rasterSource);
+                System.out.println("TERRAIN: raster source configured: "
+                        + rasterSource.getClass().getSimpleName()
+                        + " zoom " + rasterSource.getZoomLevelMin()
+                        + "-" + rasterSource.getZoomLevelMax());
+            } else {
+                System.out.println("TERRAIN: createRasterSource() returned null!");
             }
+        } else {
+            System.out.println("TERRAIN: raster drape OFF (press F5 to enable)");
         }
 
         // Wire vector area-fill draping from the map file source

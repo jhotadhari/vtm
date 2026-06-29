@@ -103,11 +103,18 @@ public class MbtilesBitmapTileSource extends TileSource {
 
         private int mQueryCount;
         private int mHitCount;
+        private boolean mLoggedFirst;
 
         @Override
         public void query(MapTile tile, ITileDataSink sink) {
             try {
+                if (!mLoggedFirst) {
+                    System.out.println("MBTILES: first query for " + tile
+                            + " (file=" + mPath + ")");
+                    mLoggedFirst = true;
+                }
                 if (mConnection == null || mConnection.isClosed()) {
+                    System.out.println("MBTILES: opening connection to " + mPath);
                     mConnection = DriverManager.getConnection("jdbc:sqlite:" + mPath);
                     mStatement = mConnection.prepareStatement(
                             "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?");
@@ -116,6 +123,7 @@ public class MbtilesBitmapTileSource extends TileSource {
                 // Convert Google/OSM y to TMS y: TMS row 0 is at bottom
                 int tmsY = (1 << tile.zoomLevel) - 1 - tile.tileY;
 
+                mStatement.clearParameters();
                 mStatement.setInt(1, tile.zoomLevel);
                 mStatement.setInt(2, tile.tileX);
                 mStatement.setInt(3, tmsY);
