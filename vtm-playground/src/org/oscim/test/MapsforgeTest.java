@@ -119,6 +119,9 @@ public class MapsforgeTest extends GdxMapApp {
         if (mBaseLayer != null)
             loadTheme(null);
 
+        System.out.println("DEM folder: " + (demFolder != null ? demFolder.getAbsolutePath() : "NOT DETECTED"));
+        System.out.println("MBTiles path: " + (mMbtilesPath != null ? mMbtilesPath : "NOT SET"));
+
         if (demFolder != null) {
             // 2D hillshading overlay
             final AdaptiveClasyHillShading algorithm = new AdaptiveClasyHillShading()
@@ -131,6 +134,14 @@ public class MapsforgeTest extends GdxMapApp {
             // 3D terrain mesh
             mDemFolderRef = new DemFolderFS(demFolder);
             addTerrainLayer();
+        } else {
+            System.out.println("WARNING: No DEM folder found — terrain and hillshading disabled.");
+            System.out.println("Expected: /home/jhotadhari/Development/android/test-data/hgt");
+            System.out.println("Command: --args=\"<mapFile>,<hgtFolder>,--mbtiles,<mbtilesFile>\"");
+            // Still allow MBTiles-only raster testing without terrain
+            if (mMbtilesPath != null) {
+                System.out.println("MBTiles available but no terrain to drape onto.");
+            }
         }
 
         BuildingLayer buildingLayer = null;
@@ -208,6 +219,7 @@ public class MapsforgeTest extends GdxMapApp {
         } else {
             System.out.println("F5  = toggle OSM raster drape ON/OFF (currently OFF)");
         }
+        System.out.println("F6  = toggle terrain ON/OFF (currently " + (mTerrainVisible ? "ON" : "OFF") + ")");
         if (themeFile != null) {
             System.out.println("T   = reload theme");
         }
