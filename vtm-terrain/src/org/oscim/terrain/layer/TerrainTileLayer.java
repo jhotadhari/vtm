@@ -281,11 +281,16 @@ public class TerrainTileLayer extends TileLayer {
      *
      * @param tile the terrain tile
      */
+    private static int sTexConsumeCount;
     public static void consumePendingTexture(MapTile tile) {
         Bitmap bitmap = sPendingTextures.remove(tile);
         if (bitmap != null && bitmap.isValid()) {
             TextureItem tex = new TextureItem(bitmap);
             tile.addData(TERRAIN_TEX, new TerrainTexData(tex));
+            if (++sTexConsumeCount <= 3) {
+                System.out.println("TERRAIN: consumed raster texture for " + tile
+                        + " (" + bitmap.getWidth() + "x" + bitmap.getHeight() + ")");
+            }
         }
     }
 

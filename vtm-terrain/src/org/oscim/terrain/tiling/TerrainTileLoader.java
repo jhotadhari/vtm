@@ -93,9 +93,13 @@ public class TerrainTileLoader extends TileLoader {
 
             // Kick off async raster tile fetch for texture draping (if configured).
             TileSource rasterSource = mTileSource.getRasterSource();
-            if (rasterSource != null && mTileDataSource instanceof TerrainTileDataSource) {
-                ((TerrainTileDataSource) mTileDataSource).fetchRasterAsync(
-                        mTile, rasterSource);
+            if (rasterSource != null) {
+                if (mTileDataSource instanceof TerrainTileDataSource) {
+                    System.out.println("TERRAIN: fetching raster for " + mTile
+                            + " from " + rasterSource.getClass().getSimpleName());
+                    ((TerrainTileDataSource) mTileDataSource).fetchRasterAsync(
+                            mTile, rasterSource);
+                }
             }
 
             // Kick off async vector drape texture generation (if configured).

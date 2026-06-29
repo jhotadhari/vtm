@@ -102,6 +102,7 @@ public class TerrainTileRenderer extends TileRenderer {
     /** Number of visible terrain tiles in the current frame. */
     private int mTerrainCnt;
     private int mLastLogCnt = -1; // for debug logging
+    private boolean mLoggedTexStatus; // one-time tex shader status diagnostic
 
     /**
      * Shader variant that adds texture sampling on top of the terrain mesh
@@ -418,6 +419,18 @@ public class TerrainTileRenderer extends TileRenderer {
                 useTex = mGlobeTexShader != null && mGlobeTexShader.program > 0;
             } else {
                 useTex = mTexShader != null && mTexShader.program > 0;
+            }
+
+            // One-time diagnostic
+            if (mTerrainCnt > 0 && !mLoggedTexStatus) {
+                mLoggedTexStatus = true;
+                System.out.println("TERRAIN: tex shader available=" + useTex
+                        + " isGlobe=" + isGlobe
+                        + " (terrain tiles rendered: " + mTerrainCnt + ")");
+                if (!useTex) {
+                    System.out.println("TERRAIN: raster draping requires tex shader. "
+                            + "Check terrain_tex.glsl / terrain_globe_tex.glsl compilation.");
+                }
             }
 
             // Depth buffer setup
