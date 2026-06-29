@@ -67,10 +67,12 @@ public class MapsforgeTest extends GdxMapApp {
     // Layer references for toggling
     private TerrainTileLayer mTerrainLayer;
     private BitmapTileLayer mHillshadeLayer;
+    private BitmapTileLayer mOsmLayer;
     private VectorTileLayer mBaseLayer;
     private BuildingLayer mBuildingLayer;
     private boolean mTerrainVisible = true;
     private boolean mHillshadeVisible = true;
+    private boolean mOsmVisible;
     private boolean mBaseVisible = true;
     private float mExaggeration = 5.0f;
     private float mBaseElevation = 0f;
@@ -118,6 +120,14 @@ public class MapsforgeTest extends GdxMapApp {
         }
         if (mBaseLayer != null)
             loadTheme(null);
+
+        // Optional OpenStreetMap raster baselayer (F4 to toggle)
+        TileSource osmSource = createOsmSource();
+        if (osmSource != null) {
+            mOsmLayer = new BitmapTileLayer(mMap, osmSource, 100);
+            mMap.layers().add(mOsmLayer);
+            mOsmLayer.setEnabled(mOsmVisible);
+        }
 
         System.out.println("DEM folder: " + (demFolder != null ? demFolder.getAbsolutePath() : "NOT DETECTED"));
         System.out.println("MBTiles path: " + (mMbtilesPath != null ? mMbtilesPath : "NOT SET"));
@@ -223,6 +233,7 @@ public class MapsforgeTest extends GdxMapApp {
         if (themeFile != null) {
             System.out.println("T   = reload theme");
         }
+        System.out.println("F4  = toggle OSM raster baselayer (currently " + (mOsmVisible ? "ON" : "OFF") + ")");
         System.out.println("F7  = toggle hillshade ON/OFF");
         System.out.println("F8  = toggle base map ON/OFF");
         System.out.println("F9  = decrease exaggeration (-5)");
@@ -302,6 +313,33 @@ public class MapsforgeTest extends GdxMapApp {
     }
 
     /**
+     * Creates an OpenStreetMap raster tile source for the flat baselayer (F4).
+     */
+    private TileSource createOsmSource() {
+        try {
+            okhttp3.OkHttpClient.Builder clientBuilder = new okhttp3.OkHttpClient.Builder();
+            clientBuilder.addNetworkInterceptor(new okhttp3.Interceptor() {
+                @Override
+                public okhttp3.Response intercept(okhttp3.Interceptor.Chain chain)
+                        throws java.io.IOException {
+                    return chain.proceed(chain.request().newBuilder()
+                            .header("User-Agent", "VTM/1.0 (https://github.com/opensciencemap/vtm)")
+                            .build());
+                }
+            });
+            return BitmapTileSource.builder()
+                    .url("https://tile.openstreetmap.org")
+                    .zoomMin(Viewport.MIN_ZOOM_LEVEL)
+                    .zoomMax(Viewport.MAX_ZOOM_LEVEL)
+                    .httpFactory(new OkHttpEngine.OkHttpFactory(clientBuilder))
+                    .build();
+        } catch (Exception e) {
+            System.err.println("OSM: failed to create tile source: " + e);
+            return null;
+        }
+    }
+
+    /**
      * Creates an optional raster tile source for texture draping.
      * Returns null if raster sources cannot be configured (e.g. no HTTP engine).
      */
@@ -355,6 +393,15 @@ public class MapsforgeTest extends GdxMapApp {
 
     @Override
     protected boolean onKeyDown(int keycode) {
+        if (keycode == Input.Keys.F4) {
+            // Toggle OSM raster baselayer
+            mOsmVisible = !mOsmVisible;
+            if (mOsmLayer != null)
+                mOsmLayer.setEnabled(mOsmVisible);
+            mMap.updateMap(true);
+            System.out.println("OSM baselayer: " + (mOsmVisible ? "ON" : "OFF"));
+            return true;
+        }
         if (keycode == Input.Keys.F5) {
             // Toggle raster/MBTiles texture draping on terrain
             if (mTerrainLayer != null) {
