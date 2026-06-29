@@ -47,6 +47,37 @@ public class MercatorTerrainProjection implements TerrainProjection {
     }
 
     @Override
+    public void project(float lat, float lon, float elevMeters,
+                        double tileOriginX, double tileOriginY, long mapSize,
+                        float[] outXYZ) {
+        // Compute world-pixel position via Mercator
+        double worldX = lonToWorldX(lon, mapSize);
+        double worldY = latToWorldY(lat, mapSize);
+
+        // Convert to tile-local (subtract tile origin)
+        outXYZ[0] = (float) (worldX - tileOriginX);
+        outXYZ[1] = (float) (worldY - tileOriginY);
+
+        // Z via elevation projection
+        // Scale = mapSize / Tile.SIZE = 1 << zoomLevel
+        double scale = mapSize / (double) org.oscim.core.Tile.SIZE;
+        outXYZ[2] = elevToTileZ(elevMeters, lat, scale);
+    }
+
+    @Override
+    public void getTileCenterECEF(double centerLat, double centerLon, float[] outECEF) {
+        // Flat plane — no sphere center
+        outECEF[0] = 0f;
+        outECEF[1] = 0f;
+        outECEF[2] = 0f;
+    }
+
+    @Override
+    public float getSphereRadius() {
+        return 0f;
+    }
+
+    @Override
     public void getBaseNormal(float lat, float lon, float[] outNormal) {
         outNormal[0] = 0f;
         outNormal[1] = 0f;

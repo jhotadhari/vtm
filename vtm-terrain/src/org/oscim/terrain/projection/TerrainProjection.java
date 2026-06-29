@@ -36,6 +36,16 @@ public interface TerrainProjection {
     }
 
     /**
+     * Mean Earth radius in meters (WGS84). Used by globe projections to
+     * convert elevation meters to radial offsets on the sphere.
+     */
+    float EARTH_RADIUS_METERS = 6371000.0f;
+
+    // ─────────────────────────────────────────────
+    // Per-axis methods (used by flat Mercator path)
+    // ─────────────────────────────────────────────
+
+    /**
      * Converts a longitude to a world-pixel x-coordinate at the given map size.
      * The caller subtracts the tile origin to obtain tile-local coordinates.
      *
@@ -68,6 +78,50 @@ public interface TerrainProjection {
      * @return z value in tile-local units (ready for short encoding)
      */
     float elevToTileZ(float elevMeters, double lat, double scale);
+
+    // ─────────────────────────────────────────────
+    // Full 3D projection (used by globe path)
+    // ─────────────────────────────────────────────
+
+    /**
+     * Projects a geographic position to rendering-space tile-local coordinates.
+     * For Mercator this delegates to {@link #lonToWorldX}, {@link #latToWorldY},
+     * and {@link #elevToTileZ}. For Globe this computes ECEF coordinates
+     * relative to the tile center on the sphere.
+     *
+     * @param lat         latitude in degrees (WGS84)
+     * @param lon         longitude in degrees (WGS84)
+     * @param elevMeters  elevation above sea level in meters, or
+     *                    {@link Short#MIN_VALUE} for no-data
+     * @param tileOriginX world-pixel x of the tile's origin
+     * @param tileOriginY world-pixel y of the tile's origin
+     * @param mapSize     map size in pixels at the current zoom level
+     * @param outXYZ      output array of length 3: [x, y, z] in tile-local units
+     */
+    void project(float lat, float lon, float elevMeters,
+                 double tileOriginX, double tileOriginY, long mapSize,
+                 float[] outXYZ);
+
+    /**
+     * Returns the ECEF (Earth-Centered, Earth-Fixed) position of a tile's
+     * geographic center on the sphere surface (no elevation). Used by the
+     * renderer to build the model matrix that places the tile on the globe.
+     * <p>
+     * For Mercator this fills {@code outECEF} with (0, 0, 0) — the flat
+     * plane has no sphere center.
+     *
+     * @param centerLat latitude of the tile center in degrees
+     * @param centerLon longitude of the tile center in degrees
+     * @param outECEF   output array of length 3: [x, y, z] in ECEF units
+     */
+    void getTileCenterECEF(double centerLat, double centerLon, float[] outECEF);
+
+    /**
+     * Returns the rendering-space radius of the sphere. For Mercator this
+     * returns 0 (flat plane). For Globe this returns the configured sphere
+     * radius in rendering units.
+     */
+    float getSphereRadius();
 
     /**
      * Returns the base surface normal at a geographic position, before terrain
