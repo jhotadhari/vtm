@@ -77,19 +77,26 @@ public class MapsforgeTest extends GdxMapApp {
     private boolean mRasterDrape = false;
     private float mTexMix = 0.8f;
     private boolean mGlobeMode = false;
+    private String mMbtilesPath; // optional MBTiles raster source path
     private DemFolderFS mDemFolderRef; // kept for layer recreation
     private MultiMapFileTileSource mMapFileSource; // kept for vector drape
 
     MapsforgeTest(File demFolder, List<File> mapFiles, File themeFile) {
-        this(demFolder, mapFiles, false, false, themeFile);
+        this(demFolder, mapFiles, false, false, themeFile, null);
     }
 
     MapsforgeTest(File demFolder, List<File> mapFiles, boolean s3db, boolean poi3d, File themeFile) {
+        this(demFolder, mapFiles, s3db, poi3d, themeFile, null);
+    }
+
+    MapsforgeTest(File demFolder, List<File> mapFiles, boolean s3db, boolean poi3d,
+                  File themeFile, String mbtilesPath) {
         this.demFolder = demFolder;
         this.mapFiles = mapFiles;
         this.s3db = s3db;
         this.poi3d = poi3d;
         this.themeFile = themeFile;
+        this.mMbtilesPath = mbtilesPath;
     }
 
     @Override
@@ -196,8 +203,14 @@ public class MapsforgeTest extends GdxMapApp {
         }
 
         System.out.println("=== TERRAIN KEYS ===");
-        System.out.println("F5  = toggle raster drape / reload theme");
-        System.out.println("F6  = toggle terrain ON/OFF");
+        if (mMbtilesPath != null) {
+            System.out.println("F5  = toggle MBTiles raster drape ON/OFF (currently OFF)");
+        } else {
+            System.out.println("F5  = toggle OSM raster drape ON/OFF (currently OFF)");
+        }
+        if (themeFile != null) {
+            System.out.println("T   = reload theme");
+        }
         System.out.println("F7  = toggle hillshade ON/OFF");
         System.out.println("F8  = toggle base map ON/OFF");
         System.out.println("F9  = decrease exaggeration (-5)");
@@ -273,6 +286,20 @@ public class MapsforgeTest extends GdxMapApp {
      * Returns null if raster sources cannot be configured (e.g. no HTTP engine).
      */
     private TileSource createRasterSource() {
+        // Prefer MBTiles raster source when configured
+        if (mMbtilesPath != null) {
+            try {
+                File f = new File(mMbtilesPath);
+                if (f.exists()) {
+                    System.out.println("TERRAIN: using MBTiles raster source: " + mMbtilesPath);
+                    return new MbtilesBitmapTileSource(
+                            mMbtilesPath, Viewport.MIN_ZOOM_LEVEL, Viewport.MAX_ZOOM_LEVEL);
+                }
+            } catch (Exception e) {
+                System.err.println("TERRAIN: failed to open MBTiles: " + e);
+            }
+        }
+
         try {
             // OSM tile usage policy requires a meaningful User-Agent
             // (https://operations.osmfoundation.org/policies/tiles/)
@@ -309,14 +336,21 @@ public class MapsforgeTest extends GdxMapApp {
     @Override
     protected boolean onKeyDown(int keycode) {
         if (keycode == Input.Keys.F5) {
+            // Toggle raster/MBTiles texture draping on terrain
+            if (mTerrainLayer != null) {
+                mRasterDrape = !mRasterDrape;
+                addTerrainLayer();
+                String src = (mMbtilesPath != null) ? "MBTiles" : "OSM";
+                System.out.println(src + " raster drape: " + (mRasterDrape ? "ON" : "OFF"));
+            }
+            return true;
+        }
+        if (keycode == Input.Keys.T) {
+            // Reload theme from file
             if (themeFile != null) {
                 mMap.setTheme(new ExternalRenderTheme(themeFile.getAbsolutePath()));
                 mMap.clearMap();
-            } else if (mTerrainLayer != null) {
-                // Toggle raster texture draping on terrain
-                mRasterDrape = !mRasterDrape;
-                addTerrainLayer();
-                System.out.println("Raster drape: " + (mRasterDrape ? "ON" : "OFF"));
+                System.out.println("Theme reloaded: " + themeFile.getName());
             }
             return true;
         }
@@ -391,9 +425,12 @@ public class MapsforgeTest extends GdxMapApp {
             throw new IllegalArgumentException("missing argument: <mapFile>");
         }
 
-        File demFolder = new File(args[0]);
-        if (demFolder.exists() && demFolder.isDirectory() && demFolder.canRead()) {
-            return demFolder;
+        // Scan all remaining args for the first directory (DEM/HGT folder)
+        for (String arg : args) {
+            File demFolder = new File(arg);
+            if (demFolder.exists() && demFolder.isDirectory() && demFolder.canRead()) {
+                return demFolder;
+            }
         }
         return null;
     }
@@ -449,9 +486,38 @@ public class MapsforgeTest extends GdxMapApp {
         File themeFile = getThemeFile(args);
         if (themeFile != null)
             args = Arrays.copyOfRange(args, 1, args.length);
-        File demFolder = getDemFolder(args);
-        if (demFolder != null)
-            args = Arrays.copyOfRange(args, 1, args.length);
-        GdxMapApp.run(new MapsforgeTest(demFolder, getMapFiles(args), themeFile));
+
+        // Find and remove the DEM/HGT folder from args (may be at any position)
+        File demFolder = null;
+        for (int i = 0; i < args.length; i++) {
+            File f = new File(args[i]);
+            if (f.exists() && f.isDirectory() && f.canRead()) {
+                demFolder = f;
+                // Remove this entry from args
+                String[] newArgs = new String[args.length - 1];
+                System.arraycopy(args, 0, newArgs, 0, i);
+                if (i < args.length - 1)
+                    System.arraycopy(args, i + 1, newArgs, i, args.length - i - 1);
+                args = newArgs;
+                break;
+            }
+        }
+
+        // Parse optional --mbtiles <path> argument
+        String mbtilesPath = null;
+        for (int i = 0; i < args.length - 1; i++) {
+            if ("--mbtiles".equals(args[i])) {
+                mbtilesPath = args[i + 1];
+                // Remove the --mbtiles and its value from args
+                String[] newArgs = new String[args.length - 2];
+                System.arraycopy(args, 0, newArgs, 0, i);
+                System.arraycopy(args, i + 2, newArgs, i, args.length - i - 2);
+                args = newArgs;
+                break;
+            }
+        }
+
+        GdxMapApp.run(new MapsforgeTest(demFolder, getMapFiles(args),
+                false, false, themeFile, mbtilesPath));
     }
 }
