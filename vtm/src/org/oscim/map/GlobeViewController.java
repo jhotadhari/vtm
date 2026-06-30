@@ -424,16 +424,16 @@ public class GlobeViewController extends ViewController {
 
     @Override
     public void getMapExtents(float[] box, float add) {
-        // Sample a grid across the screen to find the sphere's visible extent.
-        // The 4 screen corners may miss the sphere entirely when the FOV is
-        // wider than the sphere's apparent size. We sample 25 points (5×5)
-        // and build a Mercator bounding box from the sphere intersections.
+        // Compute the visible Mercator extent by sampling a dense grid
+        // of screen points. Points on the sphere return Mercator coords,
+        // points that miss return NaN (excluded from extent).
         float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
         float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
         int hits = 0;
 
         float[] coords = new float[2];
-        int GRID = 11;
+        // 21×21 = 441 samples — dense enough for high-zoom tile coverage
+        int GRID = 21;
         for (int j = 0; j < GRID; j++) {
             float sy = 1.0f - j * (2.0f / (GRID - 1));
             for (int i = 0; i < GRID; i++) {
@@ -450,12 +450,16 @@ public class GlobeViewController extends ViewController {
         }
 
         if (hits == 0) {
-            // No sphere visible — return empty extent
             for (int i = 0; i < 8; i++) box[i] = 0;
             return;
         }
 
-        // Fill box: bottom-right, bottom-left, top-left, top-right
+        // Expand bounds to ensure tile coverage at edges of the visible disc
+        float marginX = (maxX - minX) * 0.05f;
+        float marginY = (maxY - minY) * 0.05f;
+        minX -= marginX; maxX += marginX;
+        minY -= marginY; maxY += marginY;
+
         box[0] = maxX; box[1] = minY;
         box[2] = minX; box[3] = minY;
         box[4] = minX; box[5] = maxY;
