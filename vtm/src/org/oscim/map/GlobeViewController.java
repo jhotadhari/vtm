@@ -272,12 +272,10 @@ public class GlobeViewController extends ViewController {
         // scale = 2^zoom, Tile.SIZE pixels per tile at current zoom.
         double mercatorPerPixel = 1.0 / (mPos.scale * Tile.SIZE);
 
-        // For globe, a full-width drag should orbit ~half the visible disc.
-        // The visible Mercator span at this zoom is roughly the screen width
-        // in pixels times mercatorPerPixel. So direct pixel→Mercator mapping
-        // gives natural-feeling pan speed.
-        mPos.x += mMovePoint.x * mercatorPerPixel;
-        mPos.y += mMovePoint.y * mercatorPerPixel;
+        // Match flat-map grab-and-drag: dragging right moves the content
+        // left (mPos.x decreases). Subtract instead of add.
+        mPos.x -= mMovePoint.x * mercatorPerPixel;
+        mPos.y -= mMovePoint.y * mercatorPerPixel;
 
         mPos.y = FastMath.clamp(mPos.y, 0.0, 1.0);
         while (mPos.x > 1) mPos.x -= 1;
