@@ -173,10 +173,15 @@ public class GlobeViewController extends ViewController {
      * Low zoom (zoomed out) → far distance. High zoom → near distance.
      */
     private double getCameraDistance() {
-        // Map scale range [mMinScale, mMaxScale] to distance range [mDistanceFar, mDistanceNear]
-        double t = (mPos.scale - mMinScale) / (mMaxScale - mMinScale);
-        t = FastMath.clamp(t, 0.0, 1.0);
-        return mDistanceFar - t * (mDistanceFar - mDistanceNear);
+        // Logarithmic mapping: each zoom level change produces a proportional
+        // distance change. Linear mapping made zoom imperceptible at low zoom
+        // levels (scale 4→1M range means tiny t changes).
+        // At min zoom: distance = mDistanceFar (4x sphere radius).
+        // At max zoom: distance = mDistanceNear (just above surface).
+        double logScale = Math.log(mPos.scale / mMinScale)
+                        / Math.log(mMaxScale / mMinScale);
+        logScale = FastMath.clamp(logScale, 0.0, 1.0);
+        return mDistanceFar * Math.pow(mDistanceNear / mDistanceFar, logScale);
     }
 
     // ─────────────────────────────────────────────
