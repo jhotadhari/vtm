@@ -265,26 +265,21 @@ public class GlobeViewController extends ViewController {
 
     @Override
     public synchronized void moveMap(float mx, float my) {
-        // Counter-rotate pan vector by map bearing so screen drag direction
-        // matches map direction (same behavior as parent ViewController)
+        // Counter-rotate pan vector by map bearing
         ViewController.applyRotation(mx, my, mPos.bearing, mMovePoint);
 
-        // Convert screen pixels to Mercator [0,1] pan amount.
-        // At zoom: 1 Mercator unit = scale * Tile.SIZE pixels on screen.
+        // 1 screen pixel → Mercator [0,1] offset.
+        // scale = 2^zoom, Tile.SIZE pixels per tile at current zoom.
         double mercatorPerPixel = 1.0 / (mPos.scale * Tile.SIZE);
 
-        // How much to shift the geographic center.
-        // Clamp to avoid wild jumps at low zoom while keeping responsiveness.
-        double panX = mMovePoint.x * mercatorPerPixel * 0.1;
-        double panY = mMovePoint.y * mercatorPerPixel * 0.1;
+        // For globe, a full-width drag should orbit ~half the visible disc.
+        // The visible Mercator span at this zoom is roughly the screen width
+        // in pixels times mercatorPerPixel. So direct pixel→Mercator mapping
+        // gives natural-feeling pan speed.
+        mPos.x += mMovePoint.x * mercatorPerPixel;
+        mPos.y += mMovePoint.y * mercatorPerPixel;
 
-        mPos.x += panX;
-        mPos.y += panY;
-
-        // Clamp latitude (Mercator y range)
         mPos.y = FastMath.clamp(mPos.y, 0.0, 1.0);
-
-        // Wrap longitude
         while (mPos.x > 1) mPos.x -= 1;
         while (mPos.x < 0) mPos.x += 1;
 
@@ -312,18 +307,25 @@ public class GlobeViewController extends ViewController {
         if (newScale == mPos.scale)
             return false;
 
+        // Save old scale for pivot compensation
+        double oldScale = mPos.scale;
         mPos.scale = newScale;
         mPos.zoomLevel = FastMath.log2((int) mPos.scale);
 
-        // Adjust orbit position so zoom centers on the pivot point,
-        // matching the parent ViewController behavior
+        // Adjust orbit position so zoom centers on the pivot point.
+        // Same formula as parent ViewController.scaleMap.
         if (pivotX != 0 || pivotY != 0) {
             pivotX -= mWidth * mPivotX;
             pivotY -= mHeight * mPivotY;
-            moveMap(pivotX * (1.0f - scale), pivotY * (1.0f - scale));
-        } else {
-            updateMatrices();
+            // At old scale, the pixel displacement corresponds to a Mercator
+            // displacement. At new scale, the same screen position needs
+            // a different Mercator position. Adjust to keep pivot stationary.
+            double mercatorPerPixel = 1.0 / (oldScale * Tile.SIZE);
+            mPos.x += pivotX * (1.0f - scale) * mercatorPerPixel;
+            mPos.y += pivotY * (1.0f - scale) * mercatorPerPixel;
+            mPos.y = FastMath.clamp(mPos.y, 0.0, 1.0);
         }
+        updateMatrices();
         return true;
     }
 
@@ -434,10 +436,11 @@ public class GlobeViewController extends ViewController {
         int hits = 0;
 
         float[] coords = new float[2];
-        for (int j = 0; j < 5; j++) {
-            float sy = 1.0f - j * 0.5f;
-            for (int i = 0; i < 5; i++) {
-                float sx = -1.0f + i * 0.5f;
+        int GRID = 11;
+        for (int j = 0; j < GRID; j++) {
+            float sy = 1.0f - j * (2.0f / (GRID - 1));
+            for (int i = 0; i < GRID; i++) {
+                float sx = -1.0f + i * (2.0f / (GRID - 1));
                 unproject(sx, sy, coords, 0);
                 if (!Float.isNaN(coords[0])) {
                     minX = Math.min(minX, coords[0]);
