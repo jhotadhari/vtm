@@ -43,11 +43,12 @@ public class GlobeViewController extends ViewController {
     /** Default sphere radius in rendering units. */
     private static final float DEFAULT_SPHERE_RADIUS = 4096.0f;
 
-    /** Near plane distance. */
-    private static final float GLOBE_VIEW_NEAR = 10f;
+    /** Near plane distance. Set very close since the camera can approach
+     *  the sphere surface (~82 units at max zoom with radius 4096). */
+    private static final float GLOBE_VIEW_NEAR = 1f;
 
-    /** Far plane distance — must see the entire sphere from orbit. */
-    private static final float GLOBE_VIEW_FAR = 30000f;
+    /** Far plane distance — must see the entire sphere from the farthest orbit. */
+    private static final float GLOBE_VIEW_FAR = 50000f;
 
     /** Vertical field of view in degrees. 45° comfortably shows the globe. */
     private static final float GLOBE_FOV_Y = 45f;
