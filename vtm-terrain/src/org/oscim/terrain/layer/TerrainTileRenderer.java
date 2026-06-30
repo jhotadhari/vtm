@@ -508,7 +508,8 @@ public class TerrainTileRenderer extends TileRenderer {
                     gl.uniform1f(mGlobeTexShader.uAlpha, 1.0f);
                     gl.uniform1f(mGlobeTexShader.uZLimit, zLimit);
                     GLUtils.glUniform3fv(mGlobeTexShader.uLight, 1, mSun.getPosition());
-                    // Atmosphere uniforms
+                    // Sphere warp + atmosphere uniforms
+                    gl.uniform1f(mGlobeTexShader.uGlobeRadius, sphereRadius);
                     GLUtils.glUniform3fv(mGlobeTexShader.uCameraPos, 1, camPos);
                     GLUtils.glUniform4fv(mGlobeTexShader.uAtmosphereColor, 1,
                             ATMOSPHERE_COLOR);
@@ -520,7 +521,8 @@ public class TerrainTileRenderer extends TileRenderer {
                     gl.uniform1f(mGlobeShader.uAlpha, 1.0f);
                     gl.uniform1f(mGlobeShader.uZLimit, zLimit);
                     GLUtils.glUniform3fv(mGlobeShader.uLight, 1, mSun.getPosition());
-                    // Atmosphere uniforms
+                    // Sphere warp + atmosphere uniforms
+                    gl.uniform1f(mGlobeShader.uGlobeRadius, sphereRadius);
                     GLUtils.glUniform3fv(mGlobeShader.uCameraPos, 1, camPos);
                     GLUtils.glUniform4fv(mGlobeShader.uAtmosphereColor, 1,
                             ATMOSPHERE_COLOR);
