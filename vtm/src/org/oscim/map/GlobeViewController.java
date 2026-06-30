@@ -409,8 +409,10 @@ public class GlobeViewController extends ViewController {
         float iy = ny + t * dy;
         float iz = nz + t * dz;
 
-        // Convert ECEF intersection to absolute Mercator [0,1], then to an
-        // offset from the current map center (ScanBox.transScale expects offsets).
+        // Convert ECEF intersection to absolute Mercator [0,1], then to a
+        // pixel-space offset from the current map center.
+        // ScanBox.transScale() does (pos.x * scale + box[i]) / div where
+        // pos.x * scale is in pixel units; box[i] must use the same scale.
         float lat = (float) Math.toDegrees(Math.asin(
                 FastMath.clamp(iz / mSphereRadius, -1.0, 1.0)));
         float lon = (float) Math.toDegrees(Math.atan2(iy, ix));
@@ -418,8 +420,9 @@ public class GlobeViewController extends ViewController {
         float absX = (float) MercatorProjection.longitudeToX(lon);
         float absY = (float) MercatorProjection.latitudeToY(lat);
 
-        coords[position + 0] = absX - (float) mPos.x;
-        coords[position + 1] = absY - (float) mPos.y;
+        float mapSize = (float) (Tile.SIZE * mPos.scale);
+        coords[position + 0] = (absX - (float) mPos.x) * mapSize;
+        coords[position + 1] = (absY - (float) mPos.y) * mapSize;
     }
 
     // ─────────────────────────────────────────────
@@ -428,9 +431,9 @@ public class GlobeViewController extends ViewController {
 
     @Override
     public void getMapExtents(float[] box, float add) {
-        // Compute the visible Mercator extent by sampling a dense grid
-        // of screen points. Points on the sphere return Mercator coords,
-        // points that miss return NaN (excluded from extent).
+        // Compute the visible extent in pixel-space offsets by sampling a
+        // dense grid of screen points. Returns values compatible with
+        // ScanBox.transScale which expects pixel-space box corners.
         float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
         float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
         int hits = 0;
@@ -492,9 +495,17 @@ public class GlobeViewController extends ViewController {
     public synchronized void fromScreenPoint(double x, double y, Point out) {
         unprojectScreen(x, y, mu);
 
-        // mu contains Mercator [0,1] coordinates from unproject
-        out.x = mu[0];
-        out.y = mu[1];
+        // mu contains pixel-space offsets from unproject; convert back to
+        // absolute Mercator [0,1] that callers (e.g. GeoPoint fromScreenPoint)
+        // expect.
+        float mapSize = (float) (Tile.SIZE * mPos.scale);
+        if (mapSize > 0) {
+            out.x = mu[0] / mapSize + mPos.x;
+            out.y = mu[1] / mapSize + mPos.y;
+        } else {
+            out.x = mPos.x;
+            out.y = mPos.y;
+        }
     }
 
     @Override
