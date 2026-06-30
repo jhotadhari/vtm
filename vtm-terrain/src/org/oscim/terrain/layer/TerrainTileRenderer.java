@@ -721,14 +721,22 @@ public class TerrainTileRenderer extends TileRenderer {
         // Compute tile geographic bounds for the vertex shader's
         // Mercator→ECEF sphere warp. The shader needs:
         //   u_tileLonMin, u_tileLonRange, u_tileLatMax, u_tileLatRange
+        //
+        // ebs.x/y are in Mercator [0,1] space (same as MapPosition).
+        // Convert to pixel coords first, then to geographic.
         int z = ebs.zoomLevel;
         long mapSize = Tile.SIZE << z;
 
-        double leftLon = MercatorProjection.pixelXToLongitude(ebs.x, mapSize);
-        double rightLon = MercatorProjection.pixelXToLongitude(ebs.x + Tile.SIZE, mapSize);
+        // Tile origin in world-pixel coordinates
+        double pixelX = ebs.x * mapSize;
+        double pixelY = ebs.y * mapSize;
+        double tilePixelSize = Tile.SIZE;
+
+        double leftLon = MercatorProjection.pixelXToLongitude(pixelX, mapSize);
+        double rightLon = MercatorProjection.pixelXToLongitude(pixelX + tilePixelSize, mapSize);
         if (rightLon < leftLon) rightLon += 360.0;
-        double topLat = MercatorProjection.pixelYToLatitude(ebs.y, mapSize);
-        double bottomLat = MercatorProjection.pixelYToLatitude(ebs.y + Tile.SIZE, mapSize);
+        double topLat = MercatorProjection.pixelYToLatitude(pixelY, mapSize);
+        double bottomLat = MercatorProjection.pixelYToLatitude(pixelY + tilePixelSize, mapSize);
 
         float tileLonMin = (float) leftLon;
         float tileLonRange = (float) (rightLon - leftLon);
@@ -736,8 +744,6 @@ public class TerrainTileRenderer extends TileRenderer {
         float tileLatRange = (float) (topLat - bottomLat);
 
         // Set per-tile bounds uniforms on the active globe shader.
-        // The shader uses these to convert Mercator tile-local coords
-        // to geographic coords, then to ECEF on the sphere.
         boolean useTex = mGlobeTexShader != null && mGlobeTexShader.program > 0;
         if (useTex) {
             gl.uniform1f(mGlobeTexShader.uTileLonMin, tileLonMin);
