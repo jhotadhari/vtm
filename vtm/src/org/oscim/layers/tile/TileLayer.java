@@ -91,6 +91,12 @@ public abstract class TileLayer extends Layer implements UpdateListener {
     public void onMapEvent(Event event, MapPosition mapPosition) {
 
         if (event == Map.CLEAR_EVENT) {
+            // Skip tile loading for disabled layers. Without this guard a
+            // CLEAR_EVENT (e.g. from Map.setGlobeMode()) would still call
+            // init() on the tile manager of every disabled layer, expanding
+            // their tile sets and starting loaders that waste memory.
+            if (!isEnabled()) return;
+
             /* sync with TileRenderer */
             synchronized (mRenderer) {
                 tileRenderer().clearTiles();
@@ -101,8 +107,24 @@ public abstract class TileLayer extends Layer implements UpdateListener {
                 notifyLoaders();
 
         } else if (event == Map.POSITION_EVENT) {
+            // Same guard as CLEAR_EVENT: a disabled layer must not queue tile
+            // loads. Without this, setEnabled(false) only stops CLEAR_EVENT
+            // re-inits but loaders keep running on every subsequent frame.
+            if (!isEnabled()) return;
             if (mTileManager.update(mapPosition))
                 notifyLoaders();
+        }
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        // Cancel in-flight tile loads immediately when the layer is hidden so
+        // that background threads don't keep allocating bitmaps / meshes after
+        // the layer is no longer needed.  pauseLoaders(false) signals each
+        // loader to stop after its current tile completes; it does not block.
+        if (!enabled && mTileLoader != null) {
+            pauseLoaders(false);
         }
     }
 

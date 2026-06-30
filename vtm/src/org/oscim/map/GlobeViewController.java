@@ -306,9 +306,25 @@ public class GlobeViewController extends ViewController {
         // Counter-rotate pan vector by map bearing
         ViewController.applyRotation(mx, my, mPos.bearing, mMovePoint);
 
-        // 1 screen pixel → Mercator [0,1] offset.
-        // scale = 2^zoom, Tile.SIZE pixels per tile at current zoom.
-        double mercatorPerPixel = 1.0 / (mPos.scale * Tile.SIZE);
+        // Convert screen pixels to Mercator [0,1] deltas for globe orbit.
+        //
+        // The flat-map formula 1/(scale*Tile.SIZE) gives ~20× too small
+        // deltas in globe mode (the scale there means something different
+        // than "pixels per Mercator unit" on a 3D sphere).
+        //
+        // Correct derivation: a surface point at the orbit centre displaced
+        // by angle Δα appears at screen_x = R·Δα/D · (H/2)/tan(FOV/2).
+        // Setting screen_x = 1 px → Δα = D·tan(FOV/2) / (R·H/2).
+        // Mercator x spans [0,1] = 2π rad of longitude; at latitude lat the
+        // longitude contribution is compressed by cos(lat), so:
+        //   mercatorPerPixel = D·tan(FOV/2) / (R · H/2 · 2π · cos(lat))
+        double D = getCameraDistance();
+        double tanHalfFovY = Math.tan(Math.toRadians(GLOBE_FOV_Y / 2.0));
+        double targetLat = MercatorProjection.toLatitude(mPos.y);
+        double cosLat = Math.cos(Math.toRadians(targetLat));
+        if (cosLat < 0.01) cosLat = 0.01; // avoid division by zero near poles
+        double mercatorPerPixel = D * tanHalfFovY
+                / (mSphereRadius * (mHeight / 2.0) * 2.0 * Math.PI * cosLat);
 
         // Match flat-map grab-and-drag: dragging right moves the content
         // left (mPos.x decreases). Subtract instead of add.
@@ -317,12 +333,8 @@ public class GlobeViewController extends ViewController {
 
         mPos.y = FastMath.clamp(mPos.y, 0.0, 1.0);
 
-        // Pre-clamp as defense-in-depth: pulls extreme (but finite) values
-        // into [0,1] so the while-loops below are cheap no-ops.
-        mPos.x = FastMath.clamp(mPos.x, 0.0, 1.0);
-
-        // Guard against non-finite values (NaN, ±Infinity) that would
-        // cause an infinite loop: Infinity - 1 == Infinity.
+        // Longitude wraps: guard against NaN/Infinity (would loop forever),
+        // then wrap [0,1). No pre-clamp — that would kill the wrapping.
         if (!Double.isFinite(mPos.x)) {
             mPos.x = 0.5;
         } else {
@@ -357,15 +369,11 @@ public class GlobeViewController extends ViewController {
         mPos.scale = newScale;
         mPos.zoomLevel = FastMath.log2((int) mPos.scale);
 
-        // Adjust orbit position so zoom centers on the pivot point,
-        // matching the parent ViewController behavior exactly.
-        if (pivotX != 0 || pivotY != 0) {
-            pivotX -= mWidth * mPivotX;
-            pivotY -= mHeight * mPivotY;
-            moveMap(pivotX * (1.0f - scale), pivotY * (1.0f - scale));
-        } else {
-            updateMatrices();
-        }
+        // Globe: always zoom toward the sphere centre — ignore screen pivot.
+        // On a flat map the pivot-based moveMap() keeps the content under the
+        // pointer fixed, but on a globe it would spin the sphere toward the
+        // pointer with each scroll step, which is the bug the user sees.
+        updateMatrices();
         return true;
     }
 

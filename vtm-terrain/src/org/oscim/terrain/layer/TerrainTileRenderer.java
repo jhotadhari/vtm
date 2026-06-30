@@ -518,8 +518,12 @@ public class TerrainTileRenderer extends TileRenderer {
                 }
             }
 
-            // Face culling at moderate zoom
-            if (v.pos.zoomLevel < 18)
+            // Face culling only for flat (Mercator) mode. Globe terrain mesh
+            // triangles wind CW when projected from outside the sphere, so
+            // enabling culling with the default CCW=front convention removes
+            // the tiles we actually want to see. Back-of-sphere tiles are
+            // never added to mDrawTiles (getMapExtents uses ray-sphere hits).
+            if (!isGlobe && v.pos.zoomLevel < 18)
                 gl.enable(GL.CULL_FACE);
 
             gl.depthFunc(GL.LESS);
@@ -706,14 +710,14 @@ public class TerrainTileRenderer extends TileRenderer {
             // Cleanup
             gl.depthMask(false);
 
-            if (v.pos.zoomLevel < 18)
+            if (!isGlobe && v.pos.zoomLevel < 18)
                 gl.disable(GL.CULL_FACE);
         } catch (Throwable t) {
             log.severe("TERRAIN: render error: " + t);
             t.printStackTrace();
             // Restore GL state to avoid corrupting subsequent layers
             gl.depthMask(false);
-            if (v.pos.zoomLevel < 18)
+            if (mProjectionType != TerrainProjection.Type.GLOBE && v.pos.zoomLevel < 18)
                 gl.disable(GL.CULL_FACE);
             GLState.test(false, false);
             GLState.blend(false);

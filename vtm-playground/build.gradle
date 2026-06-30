@@ -42,6 +42,7 @@ application {
 }
 
 run {
+    jvmArgs '-Xmx768m'
     if (project.hasProperty("args")) {
         args project.getProperty("args").split(",")
     }

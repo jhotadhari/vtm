@@ -56,7 +56,34 @@ public class TerrainTileLayer extends TileLayer {
 
     private static final Logger log = Logger.getLogger(TerrainTileLayer.class.getName());
 
-    private static final int CACHE_LIMIT = 30;
+    /** Flat-map cache limit: a typical view needs ~9 tiles, 30 gives ample headroom. */
+    private static final int CACHE_LIMIT_FLAT = 30;
+
+    /**
+     * Globe cache limit.
+     * At zoom 5 (tile width 11.25°) a 60° visible cap needs a bounding box
+     * of roughly 200 tiles (Mercator-stretched). 700 leaves headroom for zoom
+     * transitions and the previous tile set.
+     */
+    private static final int CACHE_LIMIT_GLOBE = 700;
+
+    /**
+     * Maximum tiles ScanBox may request per frame in globe mode.
+     * Matches CACHE_LIMIT_GLOBE so the ScanBox is never dropped-on-overflow
+     * before the cache can hold the results.
+     */
+    private static final int MAX_NEW_TILES_GLOBE = 700;
+
+    /**
+     * Maximum terrain tile zoom for globe mode.
+     * At zoom 6 (tile width 5.6°) a 60° visible cap (camera ~2R) needs up
+     * to ~850 tiles — too many for the 512 MB heap with concurrent mesh
+     * allocation. At zoom 5 (tile width 11.25°) the same cap needs ~200
+     * tiles, well within MAX_NEW_TILES_GLOBE. Raster crops from zoom-3
+     * parents are 64×64 px at zoom 5 (vs 32×32 at zoom 6), giving better
+     * texture quality per crop.
+     */
+    private static final int GLOBE_MAX_TILE_ZOOM = 5;
 
     /** Key for storing ExtrusionBuckets in MapTile's TileData chain. */
     private static final Object TERRAIN_DATA = TerrainTileLayer.class.getName();
@@ -110,7 +137,9 @@ public class TerrainTileLayer extends TileLayer {
     private final TerrainTileSource mTerrainSource;
 
     public TerrainTileLayer(Map map, TerrainTileSource tileSource) {
-        this(map, tileSource, CACHE_LIMIT);
+        this(map, tileSource,
+                tileSource.getProjection().getType() == TerrainProjection.Type.GLOBE
+                        ? CACHE_LIMIT_GLOBE : CACHE_LIMIT_FLAT);
     }
 
     public TerrainTileLayer(Map map, TerrainTileSource tileSource, int cacheLimit) {
@@ -120,8 +149,21 @@ public class TerrainTileLayer extends TileLayer {
 
         mTerrainSource = tileSource;
 
-        mTileManager.setZoomLevel(tileSource.getZoomLevelMin(),
-                tileSource.getZoomLevelMax());
+        if (tileSource.getProjection().getType() == TerrainProjection.Type.GLOBE) {
+            // Globe mode needs far more tiles per frame than the flat-map default (≈100).
+            // A 45° FOV at zoom 8 requires up to 32×32 = 1024 tiles; use a larger set.
+            mTileManager.setMaxNewTiles(MAX_NEW_TILES_GLOBE);
+
+            // Cap terrain tile zoom at GLOBE_MAX_TILE_ZOOM so the tile count stays
+            // within MAX_NEW_TILES_GLOBE. At higher orbit zooms the TileManager would
+            // otherwise request zoom-10+ tiles, needing 10,000+ tiles to cover the
+            // visible 45° FOV — far more than MAX_NEW_TILES_GLOBE can hold.
+            int effectiveMaxZoom = Math.min(tileSource.getZoomLevelMax(), GLOBE_MAX_TILE_ZOOM);
+            mTileManager.setZoomLevel(tileSource.getZoomLevelMin(), effectiveMaxZoom);
+        } else {
+            mTileManager.setZoomLevel(tileSource.getZoomLevelMin(),
+                    tileSource.getZoomLevelMax());
+        }
 
         initLoader(getNumLoaders());
 

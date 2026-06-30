@@ -150,6 +150,26 @@ public class TerrainTileSource extends TileSource {
         return mTexMix;
     }
 
+    /**
+     * Maximum zoom level to use when fetching raster tiles.
+     * When the terrain tile zoom exceeds this value, the raster fetch queries
+     * a parent (ancestor) tile at this zoom and crops the relevant sub-region
+     * so the texture stays at a coarser, globe-appropriate detail level.
+     * Set to -1 (default) to disable the cap (raster fetched at terrain zoom).
+     */
+    private int mRasterMaxZoom = -1;
+
+    /** Sets the raster zoom cap (see {@link #mRasterMaxZoom}). */
+    public TerrainTileSource setRasterMaxZoom(int maxZoom) {
+        mRasterMaxZoom = maxZoom;
+        return this;
+    }
+
+    /** Returns the raster zoom cap, or -1 if no cap is set. */
+    public int getRasterMaxZoom() {
+        return mRasterMaxZoom;
+    }
+
     /** Optional vector tile source for area-fill draping onto terrain. */
     private TileSource mVectorSource;
 

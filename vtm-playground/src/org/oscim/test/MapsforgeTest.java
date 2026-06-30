@@ -78,7 +78,7 @@ public class MapsforgeTest extends GdxMapApp {
     private float mBaseElevation = 0f;
     private boolean mRasterDrape = false;
     private float mTexMix = 0.8f;
-    private boolean mGlobeMode = false;
+    boolean mGlobeMode = false;
     private String mMbtilesPath; // optional MBTiles raster source path
     private DemFolderFS mDemFolderRef; // kept for layer recreation
     private MultiMapFileTileSource mMapFileSource; // kept for vector drape
@@ -265,12 +265,21 @@ public class MapsforgeTest extends GdxMapApp {
                 .setTerrainColor(Color.get(220, 80, 60, 255))
                 .setTexMix(mTexMix);
 
-        // When globe mode is active, use GlobeTerrainProjection
+        // When globe mode is active, use GlobeTerrainProjection.
+        // Hide flat-map-only layers first so they don't respond to the
+        // CLEAR_EVENT that setGlobeMode() fires (prevents OOM from those
+        // layers expanding their tile sets and loading thousands of tiles).
         if (mGlobeMode) {
+            if (mOsmLayer != null) mOsmLayer.setEnabled(false);
+            if (mHillshadeLayer != null) mHillshadeLayer.setEnabled(false);
+            if (mBaseLayer != null) mBaseLayer.setEnabled(false);
             terrainSource.setProjection(new GlobeTerrainProjection(4096.0f));
             mMap.setGlobeMode(true, 4096.0f);
         } else {
             mMap.setGlobeMode(false);
+            if (mOsmLayer != null) mOsmLayer.setEnabled(mOsmVisible);
+            if (mHillshadeLayer != null) mHillshadeLayer.setEnabled(mHillshadeVisible);
+            if (mBaseLayer != null) mBaseLayer.setEnabled(mBaseVisible);
         }
 
         // Wire raster texture draping when enabled
@@ -278,6 +287,12 @@ public class MapsforgeTest extends GdxMapApp {
             TileSource rasterSource = createRasterSource();
             if (rasterSource != null) {
                 terrainSource.setRasterSource(rasterSource);
+                if (mGlobeMode) {
+                    // In globe mode fetch a coarser parent tile (zoom 3 = ~45° per tile)
+                    // and crop the sub-region, so globe imagery shows continental detail
+                    // instead of city-level detail.
+                    terrainSource.setRasterMaxZoom(3);
+                }
                 System.out.println("TERRAIN: raster source configured: "
                         + rasterSource.getClass().getSimpleName()
                         + " zoom " + rasterSource.getZoomLevelMin()
@@ -289,8 +304,10 @@ public class MapsforgeTest extends GdxMapApp {
             System.out.println("TERRAIN: raster drape OFF (press F5 to enable)");
         }
 
-        // Wire vector area-fill draping from the map file source
-        if (mMapFileSource != null) {
+        // Wire vector area-fill draping from the map file source.
+        // Disabled in globe mode: the MapFile covers only one region so most
+        // globe tiles would allocate empty bitmaps, wasting heap.
+        if (mMapFileSource != null && !mGlobeMode) {
             terrainSource.setVectorSource(mMapFileSource);
         }
 
@@ -490,8 +507,6 @@ public class MapsforgeTest extends GdxMapApp {
                 mHillshadeLayer.setEnabled(mGlobeMode ? false : mHillshadeVisible);
             if (mBaseLayer != null)
                 mBaseLayer.setEnabled(mGlobeMode ? false : mBaseVisible);
-            // Force a full redraw to ensure terrain tiles load immediately
-            mMap.clearMap();
             mMap.updateMap(true);
             System.out.println("Globe projection: " + (mGlobeMode ? "ON" : "OFF")
                     + " (OSM/hillshade/base map " + (mGlobeMode ? "hidden" : "visible") + ")");
@@ -598,7 +613,24 @@ public class MapsforgeTest extends GdxMapApp {
             }
         }
 
-        GdxMapApp.run(new MapsforgeTest(demFolder, getMapFiles(args),
-                false, false, themeFile, mbtilesPath));
+        // Parse optional --globe flag to start directly in globe mode
+        boolean startInGlobe = false;
+        for (int i = 0; i < args.length; i++) {
+            if ("--globe".equals(args[i])) {
+                startInGlobe = true;
+                String[] newArgs = new String[args.length - 1];
+                System.arraycopy(args, 0, newArgs, 0, i);
+                if (i < args.length - 1)
+                    System.arraycopy(args, i + 1, newArgs, i, args.length - i - 1);
+                args = newArgs;
+                break;
+            }
+        }
+
+        MapsforgeTest test = new MapsforgeTest(demFolder, getMapFiles(args),
+                false, false, themeFile, mbtilesPath);
+        if (startInGlobe)
+            test.mGlobeMode = true;
+        GdxMapApp.run(test);
     }
 }

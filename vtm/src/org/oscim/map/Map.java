@@ -435,6 +435,13 @@ public abstract class Map implements TaskQueue {
                 flatVC.setViewSize((int) oldWidth, (int) oldHeight);
             }
         }
+
+        // Force a CLEAR_EVENT on the next render so every TileLayer's
+        // TileManager calls init() with the updated isGlobeMode() value.
+        // Without this, tile managers created before setGlobeMode() (e.g.
+        // the base map's VectorTileLayer) keep their flat-map numTiles/
+        // cacheLimit (≈100) and can never load enough tiles to fill the globe.
+        clearMap();
     }
 
     /**

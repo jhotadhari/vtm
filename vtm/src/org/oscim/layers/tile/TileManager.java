@@ -47,8 +47,21 @@ public class TileManager {
     public static final Event TILE_LOADED = new Event();
     public static final Event TILE_REMOVED = new Event();
 
-    private final int mCacheLimit;
+    private int mCacheLimit;
     private int mCacheReduce;
+
+    /** When > 0, overrides the screen-size-based numTiles calculation in init(). */
+    private int mMaxNewTilesOverride = 0;
+
+    /**
+     * Fallback tile-zoom cap for globe mode on layers that do not set an
+     * explicit zoom range via setZoomLevel(). At zoom 8 (tile width 1.4°)
+     * the visible 45° FOV needs 32×32 = 1024 tiles — the upper limit that
+     * comfortably fits in the auto-expanded tile set. Layers that call
+     * setZoomLevel() with a lower mMaxZoom (e.g. terrain at zoom 7) are
+     * unaffected because the cap only fires when mMaxZoom > this value.
+     */
+    private static final int GLOBE_FALLBACK_MAX_TILE_ZOOM = 8;
 
     int mMinZoom;
     private int mMaxZoom;
@@ -222,9 +235,31 @@ public class TileManager {
 
         /* Set up TileSet large enough to hold current tiles.
          * Use screen size as workaround for blank tiles in #520. */
-        int num = Math.max(mMap.getScreenWidth(), mMap.getScreenHeight());
-        int size = Tile.SIZE >> 1;
-        int numTiles = (num * num) / (size * size) * 4;
+        int numTiles;
+        if (mMaxNewTilesOverride > 0) {
+            numTiles = mMaxNewTilesOverride;
+        } else {
+            int num = Math.max(mMap.getScreenWidth(), mMap.getScreenHeight());
+            int size = Tile.SIZE >> 1;
+            numTiles = (num * num) / (size * size) * 4;
+            // Globe mode needs far more tiles than a flat map. A 45° FOV at
+            // zoom 7 needs a 16×16 scan = 256 tiles; multiply the flat-map
+            // result to cover the full visible sphere disc for every tile layer
+            // (base map, terrain, labels, etc.) without explicit per-layer setup.
+            if (mMap.isGlobeMode()) {
+                numTiles = Math.max(numTiles * 16, 1200);
+            }
+        }
+
+        // In globe mode the tile cache must hold at least numTiles so that the
+        // ScanBox results are never evicted before they can be rendered. Expand
+        // the cache here (tiles array is already cleared above) so that all
+        // tile layers benefit automatically even when their cacheLimit was set
+        // for a flat-map context (e.g. VectorTileLayer default of 100).
+        if (mMap.isGlobeMode() && mCacheLimit < numTiles) {
+            mCacheLimit = numTiles;
+            mTiles = new MapTile[mCacheLimit];
+        }
 
         mNewTiles = new TileSet(numTiles);
         mCurrentTiles = new TileSet(numTiles);
@@ -242,7 +277,7 @@ public class TileManager {
         // FIXME cant expect init to be called otherwise
         // Should use some onLayerAttached callback instead.
         if (mNewTiles == null || mNewTiles.tiles.length == 0) {
-            mPrevZoomlevel = clamp(pos.zoomLevel, mMinZoom, mMaxZoom);
+            mPrevZoomlevel = clamp(pos.zoomLevel, mMinZoom, globeCapMaxZoom());
             init();
         }
         /* clear JobQueue and set tiles to state == NONE.
@@ -262,7 +297,7 @@ public class TileManager {
             return false;
         }
 
-        int tileZoom = clamp(pos.zoomLevel, mMinZoom, mMaxZoom);
+        int tileZoom = clamp(pos.zoomLevel, mMinZoom, globeCapMaxZoom());
 
         if (mZoomTable == null) {
             /* greater 1 when zoomed in further than
@@ -707,7 +742,8 @@ public class TileManager {
                 MapTile tile = null;
 
                 if (cnt == maxTiles) {
-                    log.fine("too many tiles " + maxTiles);
+                    log.warning("TileManager: tile cap hit at " + maxTiles
+                            + " (zoom=" + mZoom + "); increase MAX_NEW_TILES_GLOBE if globe");
                     break;
                 }
                 int xx = x;
@@ -746,6 +782,33 @@ public class TileManager {
     public void setZoomLevel(int zoomLevelMin, int zoomLevelMax) {
         mMinZoom = zoomLevelMin;
         mMaxZoom = zoomLevelMax;
+    }
+
+    /**
+     * Overrides the tile-set capacity used in {@link #init()}.
+     * The default size is derived from screen dimensions and is sufficient
+     * for flat-map rendering but too small for globe mode, where a single
+     * frame may require several hundred tiles to cover the visible sphere.
+     * Call before the first {@link #update} if a larger tile set is needed.
+     *
+     * @param max maximum number of tiles that ScanBox may request per frame
+     */
+    public void setMaxNewTiles(int max) {
+        mMaxNewTilesOverride = Math.max(1, max);
+    }
+
+    /**
+     * Returns the effective maximum tile zoom for the current mode.
+     * In globe mode, layers that have not set an explicit zoom cap via
+     * {@link #setZoomLevel} are capped at {@link #GLOBE_FALLBACK_MAX_TILE_ZOOM}
+     * so the ScanBox never requests more tiles than the tile set can hold.
+     * Layers that already have mMaxZoom ≤ GLOBE_FALLBACK_MAX_TILE_ZOOM are
+     * unaffected (e.g. terrain which caps at 7).
+     */
+    private int globeCapMaxZoom() {
+        if (mMap.isGlobeMode() && mMaxZoom > GLOBE_FALLBACK_MAX_TILE_ZOOM)
+            return GLOBE_FALLBACK_MAX_TILE_ZOOM;
+        return mMaxZoom;
     }
 
     /**

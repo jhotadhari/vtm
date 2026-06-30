@@ -15,7 +15,9 @@
 package org.oscim.terrain.tiling;
 
 import org.mapsforge.map.elevation.ElevationAPI;
+import org.oscim.backend.CanvasAdapter;
 import org.oscim.backend.canvas.Bitmap;
+import org.oscim.backend.canvas.Canvas;
 import org.oscim.core.GeometryBuffer;
 import org.oscim.core.MercatorProjection;
 import org.oscim.core.Point;
@@ -28,6 +30,8 @@ import org.oscim.tiling.ITileDataSource;
 import org.oscim.tiling.QueryResult;
 import org.oscim.tiling.TileSource;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Logger;
@@ -62,6 +66,25 @@ public class TerrainTileDataSource implements ITileDataSource {
 
     /** Set by cancel() to stop in-flight async tasks from storing results. */
     private volatile boolean mCancelled;
+
+    /**
+     * LRU cache of coarse parent bitmaps used when rasterMaxZoom is active.
+     * Multiple terrain tiles share the same zoom-N parent; caching it avoids
+     * redundant DB fetches. Accessed only from the single raster executor thread.
+     * Evicted entries are recycled immediately to free heap.
+     */
+    private final LinkedHashMap<Long, Bitmap> mParentBitmapCache =
+            new LinkedHashMap<Long, Bitmap>(32, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Long, Bitmap> eldest) {
+                    if (size() > 16) {
+                        Bitmap b = eldest.getValue();
+                        if (b != null) b.recycle();
+                        return true;
+                    }
+                    return false;
+                }
+            };
 
     public TerrainTileDataSource(TerrainTileSource tileSource) {
         mTileSource = tileSource;
@@ -177,10 +200,37 @@ public class TerrainTileDataSource implements ITileDataSource {
      * @param rasterSource the raster tile source (e.g. OSM bitmap tiles)
      */
     public void fetchRasterAsync(MapTile tile, TileSource rasterSource) {
-        // Check zoom bounds
+        // Check zoom bounds against the terrain tile's own zoom level
         if (tile.zoomLevel > rasterSource.getZoomLevelMax()
                 || tile.zoomLevel < rasterSource.getZoomLevelMin()) {
             return;
+        }
+
+        // Determine whether to fetch a coarser parent tile and crop the sub-region.
+        // This is used in globe mode so continental-scale imagery is shown instead
+        // of city-level detail (e.g., rasterMaxZoom=3 means fetch zoom-3 tile and
+        // crop the 1/8 sub-region that covers this terrain tile's area).
+        final int rasterMaxZoom = mTileSource.getRasterMaxZoom();
+        final boolean useCrop = rasterMaxZoom >= 0
+                && tile.zoomLevel > rasterMaxZoom
+                && rasterMaxZoom >= rasterSource.getZoomLevelMin();
+
+        final int fetchTileX, fetchTileY, fetchZoom;
+        final int localX, localY, subW;
+        if (useCrop) {
+            int zoomDiff = tile.zoomLevel - rasterMaxZoom;
+            int subStep  = 1 << zoomDiff;
+            fetchZoom  = rasterMaxZoom;
+            fetchTileX = tile.tileX >> zoomDiff;
+            fetchTileY = tile.tileY >> zoomDiff;
+            localX     = tile.tileX & (subStep - 1);
+            localY     = tile.tileY & (subStep - 1);
+            subW       = 256 / subStep;
+        } else {
+            fetchZoom  = tile.zoomLevel;
+            fetchTileX = tile.tileX;
+            fetchTileY = tile.tileY;
+            localX = 0; localY = 0; subW = 256;
         }
 
         // Lazy-init single-thread executor (daemon threads)
@@ -219,16 +269,48 @@ public class TerrainTileDataSource implements ITileDataSource {
                     }
                 };
 
-                rasterDs.query(tile, rasterSink);
-
-                // Skip if cancelled (tile no longer needed)
-                if (mCancelled) return;
+                Bitmap result;
+                if (useCrop) {
+                    // Many terrain tiles share the same coarse parent; reuse the cached
+                    // bitmap rather than fetching the same DB row repeatedly.
+                    long cacheKey = ((long) fetchZoom << 40)
+                            | ((long) fetchTileX << 20) | fetchTileY;
+                    Bitmap parentBitmap = mParentBitmapCache.get(cacheKey);
+                    if (parentBitmap == null || !parentBitmap.isValid()) {
+                        MapTile fetchTile = new MapTile(fetchTileX, fetchTileY, fetchZoom);
+                        rasterDs.query(fetchTile, rasterSink);
+                        parentBitmap = captured[0];
+                        if (parentBitmap != null && parentBitmap.isValid()) {
+                            mParentBitmapCache.put(cacheKey, parentBitmap);
+                        }
+                    }
+                    if (mCancelled) return;
+                    // Crop the sub-region for this terrain tile out of the parent bitmap.
+                    // Draw parent at negative offset into a subW×subW canvas so the canvas
+                    // shows exactly the right sub-region. Keep the crop at native size;
+                    // OpenGL bilinear filtering handles magnification on-GPU.
+                    if (parentBitmap != null && parentBitmap.isValid()) {
+                        int srcX = localX * subW;
+                        int srcY = localY * subW;
+                        Bitmap crop = CanvasAdapter.newBitmap(subW, subW, 0);
+                        Canvas cropCanvas = CanvasAdapter.newCanvas();
+                        cropCanvas.setBitmap(crop);
+                        cropCanvas.drawBitmap(parentBitmap, -srcX, -srcY);
+                        result = crop;
+                    } else {
+                        result = null;
+                    }
+                } else {
+                    rasterDs.query(tile, rasterSink);
+                    if (mCancelled) return;
+                    result = captured[0];
+                }
 
                 // Store the captured bitmap in the pending texture map.
                 // The GL render thread picks it up on the next frame (update()).
-                if (captured[0] != null && captured[0].isValid()) {
+                if (result != null && result.isValid()) {
                     org.oscim.terrain.layer.TerrainTileLayer.addPendingTexture(
-                            tile, captured[0]);
+                            tile, result);
                     log.fine("TERRAIN: async raster fetched for " + tile);
                 }
             } catch (Throwable t) {
@@ -291,6 +373,10 @@ public class TerrainTileDataSource implements ITileDataSource {
             mVectorDrapeExecutor.shutdownNow();
             mVectorDrapeExecutor = null;
         }
+        for (Bitmap b : mParentBitmapCache.values()) {
+            if (b != null) b.recycle();
+        }
+        mParentBitmapCache.clear();
     }
 
     @Override
