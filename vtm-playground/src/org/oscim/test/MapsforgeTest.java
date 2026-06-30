@@ -224,6 +224,7 @@ public class MapsforgeTest extends GdxMapApp {
         }
 
         System.out.println("=== TERRAIN KEYS ===");
+        System.out.println("F4  = toggle OSM raster baselayer (currently " + (mOsmVisible ? "ON" : "OFF") + ")");
         if (mMbtilesPath != null) {
             System.out.println("F5  = toggle MBTiles raster drape ON/OFF (currently OFF)");
         } else {
@@ -233,7 +234,6 @@ public class MapsforgeTest extends GdxMapApp {
         if (themeFile != null) {
             System.out.println("T   = reload theme");
         }
-        System.out.println("F4  = toggle OSM raster baselayer (currently " + (mOsmVisible ? "ON" : "OFF") + ")");
         System.out.println("F7  = toggle hillshade ON/OFF");
         System.out.println("F8  = toggle base map ON/OFF");
         System.out.println("F9  = decrease exaggeration (-5)");

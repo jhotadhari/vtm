@@ -135,13 +135,15 @@ public final class TerrainUtils {
                 int vIdx = (j * N + i) * 3;
 
                 if (isGlobe) {
-                    // Globe: projection computes all 3 coordinates (ECEF-relative)
-                    float[] xyz = new float[3];
-                    projection.project((float) lat, (float) lon, elev,
-                            tileOriginX, tileOriginY, tileMapSize, xyz);
-                    points[vIdx + 0] = xyz[0];
-                    points[vIdx + 1] = xyz[1];
-                    points[vIdx + 2] = xyz[2];
+                    // Globe: Mercator tile-local x,y for correct UV in shader,
+                    // ECEF radial Z for elevation on the sphere surface.
+                    // The vertex shader applies the sphere warp (Mercator→ECEF).
+                    float tx = i * step;
+                    float ty = j * step;
+                    float tz = projection.elevToTileZ(elev, lat, tileScale);
+                    points[vIdx + 0] = tx;
+                    points[vIdx + 1] = ty;
+                    points[vIdx + 2] = tz;
                 } else {
                     // Mercator: flat grid positions, only Z through projection
                     float tx = i * step;
