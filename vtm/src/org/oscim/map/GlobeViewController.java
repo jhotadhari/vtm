@@ -59,6 +59,11 @@ public class GlobeViewController extends ViewController {
     /** Camera distance multiplier at maximum zoom (fully zoomed in). */
     private static final float DISTANCE_NEAR_MULTIPLIER = 1.02f;
 
+    /** Maximum orbit latitude in degrees. Clamped to avoid lookAt pole
+     *  singularity where the up vector (0,0,1) becomes collinear with
+     *  the view direction, producing an unstable view matrix. */
+    private static final double MAX_ORBIT_LATITUDE = 85.0;
+
     /** Sphere radius in rendering units. */
     private final float mSphereRadius;
 
@@ -159,6 +164,11 @@ public class GlobeViewController extends ViewController {
         double targetLon = MercatorProjection.toLongitude(mPos.x);
         double targetLat = MercatorProjection.toLatitude(mPos.y);
 
+        // Clamp latitude away from the poles to avoid lookAt singularity.
+        // At ±90° the up vector (0,0,1) is collinear with the surface
+        // normal, producing a degenerate view matrix.
+        targetLat = FastMath.clamp(targetLat, -MAX_ORBIT_LATITUDE, MAX_ORBIT_LATITUDE);
+
         // Camera orbits above the target point, pushed out to cameraDistance
         // from the sphere center (along the surface normal at that point)
         double latRad = Math.toRadians(targetLat);
@@ -179,7 +189,25 @@ public class GlobeViewController extends ViewController {
         // levels (scale 4→1M range means tiny t changes).
         // At min zoom: distance = mDistanceFar (4x sphere radius).
         // At max zoom: distance = mDistanceNear (just above surface).
-        double logScale = Math.log(mPos.scale / mMinScale)
+
+        // Guard against uninitialized or invalid scale limits:
+        // mMinScale==0 → Math.log(Infinity) or division by zero → NaN
+        // mMaxScale==mMinScale → Math.log(1)==0 → division by zero → NaN
+        if (mMinScale <= 0 || mMaxScale <= 0 || mMaxScale <= mMinScale) {
+            return mDistanceFar;
+        }
+
+        // Clamp input to avoid Math.log(≤0) which produces -Infinity/NaN
+        double effectiveScale = FastMath.clamp(mPos.scale, mMinScale, mMaxScale);
+
+        if (effectiveScale <= mMinScale) {
+            return mDistanceFar;
+        }
+        if (effectiveScale >= mMaxScale) {
+            return mDistanceNear;
+        }
+
+        double logScale = Math.log(effectiveScale / mMinScale)
                         / Math.log(mMaxScale / mMinScale);
         logScale = FastMath.clamp(logScale, 0.0, 1.0);
         return mDistanceFar * Math.pow(mDistanceNear / mDistanceFar, logScale);
@@ -248,11 +276,15 @@ public class GlobeViewController extends ViewController {
         /* clamp latitude */
         mPos.y = FastMath.clamp(mPos.y, 0, 1);
 
-        /* wrap longitude */
-        while (mPos.x > 1)
-            mPos.x -= 1;
-        while (mPos.x < 0)
-            mPos.x += 1;
+        /* wrap longitude — guard against non-finite values */
+        if (!Double.isFinite(mPos.x)) {
+            mPos.x = 0.5;
+        } else {
+            while (mPos.x > 1)
+                mPos.x -= 1;
+            while (mPos.x < 0)
+                mPos.x += 1;
+        }
 
         /* limit longitude */
         if (mPos.x > mMaxX)
@@ -284,8 +316,19 @@ public class GlobeViewController extends ViewController {
         mPos.y -= mMovePoint.y * mercatorPerPixel;
 
         mPos.y = FastMath.clamp(mPos.y, 0.0, 1.0);
-        while (mPos.x > 1) mPos.x -= 1;
-        while (mPos.x < 0) mPos.x += 1;
+
+        // Pre-clamp as defense-in-depth: pulls extreme (but finite) values
+        // into [0,1] so the while-loops below are cheap no-ops.
+        mPos.x = FastMath.clamp(mPos.x, 0.0, 1.0);
+
+        // Guard against non-finite values (NaN, ±Infinity) that would
+        // cause an infinite loop: Infinity - 1 == Infinity.
+        if (!Double.isFinite(mPos.x)) {
+            mPos.x = 0.5;
+        } else {
+            while (mPos.x > 1) mPos.x -= 1;
+            while (mPos.x < 0) mPos.x += 1;
+        }
 
         updateMatrices();
     }
@@ -342,8 +385,12 @@ public class GlobeViewController extends ViewController {
     private void clampPosition() {
         mPos.x = FastMath.clamp(mPos.x, 0, 1);
         mPos.y = FastMath.clamp(mPos.y, 0, 1);
-        while (mPos.x > 1) mPos.x -= 1;
-        while (mPos.x < 0) mPos.x += 1;
+        if (!Double.isFinite(mPos.x)) {
+            mPos.x = 0.5;
+        } else {
+            while (mPos.x > 1) mPos.x -= 1;
+            while (mPos.x < 0) mPos.x += 1;
+        }
     }
 
     // ─────────────────────────────────────────────

@@ -50,7 +50,7 @@ public class MbtilesBitmapTileSource extends TileSource {
         mPath = path;
     }
 
-    private MbtilesDataSource mSharedDataSource;
+    private volatile MbtilesDataSource mSharedDataSource;
 
     @Override
     public ITileDataSource getDataSource() {
@@ -58,7 +58,11 @@ public class MbtilesBitmapTileSource extends TileSource {
         // terrain-raster single-thread executor, and opening a new SQLite
         // connection per tile is prohibitively slow (especially for large files).
         if (mSharedDataSource == null) {
-            mSharedDataSource = new MbtilesDataSource(mPath);
+            synchronized (this) {
+                if (mSharedDataSource == null) {
+                    mSharedDataSource = new MbtilesDataSource(mPath);
+                }
+            }
         }
         return mSharedDataSource;
     }
@@ -75,7 +79,7 @@ public class MbtilesBitmapTileSource extends TileSource {
             return OpenResult.SUCCESS;
         } catch (Exception e) {
             log.severe("MBTiles: failed to open " + mPath + ": " + e);
-            return OpenResult.SUCCESS; // report success even if we logged a warning; tiles may still load
+            return new OpenResult("Failed to open MBTiles file: " + e.getMessage());
         }
     }
 
@@ -107,6 +111,10 @@ public class MbtilesBitmapTileSource extends TileSource {
 
         @Override
         public synchronized void query(MapTile tile, ITileDataSink sink) {
+            if (mCancelled) {
+                sink.completed(QueryResult.FAILED);
+                return;
+            }
             try {
                 if (!mLoggedFirst) {
                     System.out.println("MBTILES: first query for " + tile
@@ -169,7 +177,7 @@ public class MbtilesBitmapTileSource extends TileSource {
             // or when the JVM exits.
         }
 
-        void closeConnection() {
+        synchronized void closeConnection() {
             try {
                 if (mStatement != null) mStatement.close();
                 if (mConnection != null) mConnection.close();
@@ -177,8 +185,11 @@ public class MbtilesBitmapTileSource extends TileSource {
             }
         }
 
+        private volatile boolean mCancelled;
+
         @Override
         public void cancel() {
+            mCancelled = true;
         }
     }
 }

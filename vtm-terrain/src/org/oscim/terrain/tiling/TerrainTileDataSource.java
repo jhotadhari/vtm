@@ -97,7 +97,7 @@ public class TerrainTileDataSource implements ITileDataSource {
             double leftLon = MercatorProjection.pixelXToLongitude(origin.x, mapSize);
             double rightLon = MercatorProjection.pixelXToLongitude(origin.x + Tile.SIZE, mapSize);
             if (rightLon < leftLon)
-                rightLon += mapSize;
+                rightLon += 360.0;
 
             double topLat = MercatorProjection.pixelYToLatitude(origin.y, mapSize);
             double bottomLat = MercatorProjection.pixelYToLatitude(origin.y + Tile.SIZE, mapSize);

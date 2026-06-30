@@ -105,6 +105,12 @@ public class TerrainTileRenderer extends TileRenderer {
     private boolean mLoggedTexStatus; // one-time tex shader status diagnostic
     private boolean mLoggedGlobeFrame; // first globe frame diagnostic
 
+    /** Camera position in ECEF for globe atmosphere/fog. Default {0,0,R*3}. */
+    private final float[] mCamPosUniform = new float[3];
+
+    /** Guard for diagnostic logging in the render hot path. */
+    private static final boolean RENDER_DEBUG = false;
+
     /**
      * Shader variant that adds texture sampling on top of the terrain mesh
      * shader. Shares the same vertex attributes and core uniforms as
@@ -247,6 +253,17 @@ public class TerrainTileRenderer extends TileRenderer {
     }
 
     /**
+     * Sets the camera ECEF position for globe atmosphere/fog shading.
+     * Call each frame from the ViewController to provide the actual
+     * orbital camera position. If never called, defaults to {0,0,R*3}.
+     */
+    public void setCameraPosition(float x, float y, float z) {
+        mCamPosUniform[0] = x;
+        mCamPosUniform[1] = y;
+        mCamPosUniform[2] = z;
+    }
+
+    /**
      * Sets the projection and its type. Must be called before the first
      * render frame. Determines which shader and matrix strategy to use.
      * <p>
@@ -254,6 +271,9 @@ public class TerrainTileRenderer extends TileRenderer {
      * to prevent resource leaks.
      */
     public void setProjection(TerrainProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("projection must not be null");
+        }
         TerrainProjection.Type newType = projection.getType();
         if (mProjectionType != newType) {
             // Delete old GL programs before switching
@@ -286,6 +306,10 @@ public class TerrainTileRenderer extends TileRenderer {
         if (mShader != null && mShader.getProgram() > 0) {
             gl.deleteProgram(mShader.getProgram());
             mShader = null;
+        }
+        if (mFallbackTex != null) {
+            mFallbackTex.dispose();
+            mFallbackTex = null;
         }
     }
 
@@ -436,33 +460,35 @@ public class TerrainTileRenderer extends TileRenderer {
                 useTex = mTexShader != null && mTexShader.program > 0;
             }
 
-            // Diagnostic: print every frame when in globe mode
-            if (isGlobe && mTerrainCnt > 0) {
-                if (!mLoggedGlobeFrame) {
-                    mLoggedGlobeFrame = true;
-                    float sr = (mProjection != null) ? mProjection.getSphereRadius() : -1;
-                    System.out.println("TERRAIN: GLOBE RENDERING — terrainCnt=" + mTerrainCnt
-                            + " useTex=" + useTex + " sphereRadius=" + sr);
-                    // Print first tile's bounds for debugging
-                    if (mTerrainTileData[0] != null && mTerrainTileData[0].buckets != null) {
-                        ExtrusionBuckets ebs = mTerrainTileData[0].buckets;
-                        System.out.println("TERRAIN: first tile x=" + ebs.x + " y=" + ebs.y
-                                + " z=" + ebs.zoomLevel);
+            // Diagnostic: print once when in globe mode (guarded so compiler
+            // can eliminate the entire block when false).
+            if (RENDER_DEBUG) {
+                if (isGlobe && mTerrainCnt > 0) {
+                    if (!mLoggedGlobeFrame) {
+                        mLoggedGlobeFrame = true;
+                        float sr = (mProjection != null) ? mProjection.getSphereRadius() : -1;
+                        System.out.println("TERRAIN: GLOBE RENDERING — terrainCnt=" + mTerrainCnt
+                                + " useTex=" + useTex + " sphereRadius=" + sr);
+                        if (mTerrainTileData[0] != null && mTerrainTileData[0].buckets != null) {
+                            ExtrusionBuckets ebs = mTerrainTileData[0].buckets;
+                            System.out.println("TERRAIN: first tile x=" + ebs.x + " y=" + ebs.y
+                                    + " z=" + ebs.zoomLevel);
+                        }
                     }
+                } else if (!isGlobe) {
+                    mLoggedGlobeFrame = false;
                 }
-            } else if (!isGlobe) {
-                mLoggedGlobeFrame = false;
-            }
 
-            // One-time diagnostic
-            if (mTerrainCnt > 0 && !mLoggedTexStatus) {
-                mLoggedTexStatus = true;
-                System.out.println("TERRAIN: tex shader available=" + useTex
-                        + " isGlobe=" + isGlobe
-                        + " (terrain tiles rendered: " + mTerrainCnt + ")");
-                if (!useTex) {
-                    System.out.println("TERRAIN: raster draping requires tex shader. "
-                            + "Check terrain_globe_tex.glsl compilation.");
+                // One-time diagnostic
+                if (mTerrainCnt > 0 && !mLoggedTexStatus) {
+                    mLoggedTexStatus = true;
+                    System.out.println("TERRAIN: tex shader available=" + useTex
+                            + " isGlobe=" + isGlobe
+                            + " (terrain tiles rendered: " + mTerrainCnt + ")");
+                    if (!useTex) {
+                        System.out.println("TERRAIN: raster draping requires tex shader. "
+                                + "Check terrain_globe_tex.glsl compilation.");
+                    }
                 }
             }
 
@@ -500,26 +526,30 @@ public class TerrainTileRenderer extends TileRenderer {
 
             // Compute dynamic u_zlimit so height-based coloring adapts to zoom.
             // For Mercator: 8000m (high peak) maps to h=1.0 in tile-local z-units.
-            // For Globe: use the projection's sphere radius as the reference scale.
+            // For Globe: use the same elevToTileZ conversion as the vertex pipeline
+            // (elevMeters * sphereRadius / EARTH_RADIUS_METERS) so that
+            // h = a_pos.z / zLimit maps an 8000m peak to h ≈ 1.0.
             double scale = 1L << v.pos.zoomLevel;
+
+            // Get sphere radius from projection (or default for backward compat)
+            float sphereRadius = (mProjection != null)
+                    ? mProjection.getSphereRadius() : 4096.0f;
+
             float zLimit;
             if (isGlobe && mProjection != null) {
-                // Globe ECEF-relative Z is in rendering units; use sphere radius
-                zLimit = mProjection.getSphereRadius() * 0.5f;
+                zLimit = 8000f * sphereRadius / TerrainProjection.EARTH_RADIUS_METERS;
             } else {
                 float groundScale = (float) MercatorProjection.groundResolutionWithScale(
                         (float) v.pos.getLatitude(), scale);
                 zLimit = 8000.0f / (groundScale * 10);
             }
 
-            // Get sphere radius from projection (or default for backward compat)
-            float sphereRadius = (mProjection != null)
-                    ? mProjection.getSphereRadius() : 4096.0f;
-
-            // Camera position for atmosphere: approximate as above the sphere center.
-            // The vertex shader model matrix translates tiles to ECEF positions;
-            // the camera orbits at (0,0,sphereRadius*3) looking at origin.
-            float[] camPos = {0f, 0f, sphereRadius * 3f};
+            // Camera position for atmosphere: use the setCameraPosition() value
+            // if provided, otherwise default to (0, 0, sphereRadius*3).
+            if (mCamPosUniform[0] == 0f && mCamPosUniform[1] == 0f
+                    && mCamPosUniform[2] == 0f) {
+                mCamPosUniform[2] = sphereRadius * 3f;
+            }
 
             // Set common uniforms (per-shader-variant)
             if (isGlobe) {
@@ -529,10 +559,11 @@ public class TerrainTileRenderer extends TileRenderer {
                     GLUtils.glUniform3fv(mGlobeTexShader.uLight, 1, mSun.getPosition());
                     // Sphere warp + atmosphere uniforms
                     gl.uniform1f(mGlobeTexShader.uGlobeRadius, sphereRadius);
-                    GLUtils.glUniform3fv(mGlobeTexShader.uCameraPos, 1, camPos);
+                    GLUtils.glUniform3fv(mGlobeTexShader.uCameraPos, 1, mCamPosUniform);
                     GLUtils.glUniform4fv(mGlobeTexShader.uAtmosphereColor, 1,
                             ATMOSPHERE_COLOR);
                     gl.uniform1f(mGlobeTexShader.uFogDensity, 0.6f);
+                    gl.uniform1i(mGlobeTexShader.uMode, 0);
                     if (mFallbackTex != null) {
                         mFallbackTex.bind();
                     }
@@ -542,16 +573,18 @@ public class TerrainTileRenderer extends TileRenderer {
                     GLUtils.glUniform3fv(mGlobeShader.uLight, 1, mSun.getPosition());
                     // Sphere warp + atmosphere uniforms
                     gl.uniform1f(mGlobeShader.uGlobeRadius, sphereRadius);
-                    GLUtils.glUniform3fv(mGlobeShader.uCameraPos, 1, camPos);
+                    GLUtils.glUniform3fv(mGlobeShader.uCameraPos, 1, mCamPosUniform);
                     GLUtils.glUniform4fv(mGlobeShader.uAtmosphereColor, 1,
                             ATMOSPHERE_COLOR);
                     gl.uniform1f(mGlobeShader.uFogDensity, 0.6f);
+                    gl.uniform1i(mGlobeShader.uMode, 0);
                 }
             } else {
                 if (useTex) {
                     gl.uniform1f(mTexShader.uAlpha, 1.0f);
                     gl.uniform1f(mTexShader.uZLimit, zLimit);
                     GLUtils.glUniform3fv(mTexShader.uLight, 1, mSun.getPosition());
+                    gl.uniform1i(mTexShader.uMode, 0);
                     if (mFallbackTex != null) {
                         mFallbackTex.bind();
                     }
@@ -559,6 +592,7 @@ public class TerrainTileRenderer extends TileRenderer {
                     gl.uniform1f(mShader.uAlpha, 1.0f);
                     gl.uniform1f(mShader.uZLimit, zLimit);
                     GLUtils.glUniform3fv(mShader.uLight, 1, mSun.getPosition());
+                    gl.uniform1i(mShader.uMode, 0);
                 }
             }
 
@@ -619,7 +653,6 @@ public class TerrainTileRenderer extends TileRenderer {
                                     false, RenderBuckets.SHORT_BYTES * 4,
                                     eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
                             if (eb.idx[4] > 0) {
-                                gl.uniform1i(mGlobeTexShader.uMode, 0);
                                 gl.drawElements(GL.TRIANGLES, eb.idx[4],
                                         GL.UNSIGNED_SHORT, eb.off[4]);
                             }
@@ -632,7 +665,6 @@ public class TerrainTileRenderer extends TileRenderer {
                                     false, RenderBuckets.SHORT_BYTES * 4,
                                     eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
                             if (eb.idx[4] > 0) {
-                                gl.uniform1i(mGlobeShader.uMode, 0);
                                 gl.drawElements(GL.TRIANGLES, eb.idx[4],
                                         GL.UNSIGNED_SHORT, eb.off[4]);
                             }
@@ -649,7 +681,6 @@ public class TerrainTileRenderer extends TileRenderer {
                                 eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
 
                         if (eb.idx[4] > 0) {
-                            gl.uniform1i(mTexShader.uMode, 0);
                             gl.drawElements(GL.TRIANGLES, eb.idx[4],
                                     GL.UNSIGNED_SHORT, eb.off[4]);
                         }
@@ -665,7 +696,6 @@ public class TerrainTileRenderer extends TileRenderer {
                                 eb.getVertexOffset() + RenderBuckets.SHORT_BYTES * 3);
 
                         if (eb.idx[4] > 0) {
-                            gl.uniform1i(mShader.uMode, 0);
                             gl.drawElements(GL.TRIANGLES, eb.idx[4],
                                     GL.UNSIGNED_SHORT, eb.off[4]);
                         }
@@ -681,7 +711,6 @@ public class TerrainTileRenderer extends TileRenderer {
         } catch (Throwable t) {
             log.severe("TERRAIN: render error: " + t);
             t.printStackTrace();
-            mTerrainCnt = 0; // skip future renders
             // Restore GL state to avoid corrupting subsequent layers
             gl.depthMask(false);
             if (v.pos.zoomLevel < 18)

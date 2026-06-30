@@ -189,6 +189,10 @@ public class TerrainTileLayer extends TileLayer {
                 ds.dispose();
             }
         }
+        // Clear pending texture maps to prevent leaks from in-flight
+        // async lambdas that may complete after executor shutdown.
+        sPendingTextures.clear();
+        sPendingVectorTextures.clear();
     }
 
     /**

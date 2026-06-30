@@ -37,6 +37,7 @@ void main() {
     );
 
     vec4 pos = vec4(ecefPos, 1.0);
+    pos.z *= u_alpha;
     gl_Position = u_mvp * pos;
 
     // Pass world-space position and normal for atmosphere

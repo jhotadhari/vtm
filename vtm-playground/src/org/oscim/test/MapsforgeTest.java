@@ -482,12 +482,14 @@ public class MapsforgeTest extends GdxMapApp {
             addTerrainLayer();
             // In globe mode, hide flat layers — they render in Mercator space
             // and appear tilted on the sphere surface.
+            // Restore each layer to its individually-tracked visibility
+            // when leaving globe mode, rather than blindly enabling all.
             if (mOsmLayer != null)
-                mOsmLayer.setEnabled(!mGlobeMode);
+                mOsmLayer.setEnabled(mGlobeMode ? false : mOsmVisible);
             if (mHillshadeLayer != null)
-                mHillshadeLayer.setEnabled(!mGlobeMode);
+                mHillshadeLayer.setEnabled(mGlobeMode ? false : mHillshadeVisible);
             if (mBaseLayer != null)
-                mBaseLayer.setEnabled(!mGlobeMode);
+                mBaseLayer.setEnabled(mGlobeMode ? false : mBaseVisible);
             // Force a full redraw to ensure terrain tiles load immediately
             mMap.clearMap();
             mMap.updateMap(true);

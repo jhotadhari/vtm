@@ -118,6 +118,10 @@ public abstract class Map implements TaskQueue {
     private ViewController mViewport;
     private final AsyncExecutor mAsyncExecutor;
 
+    /** Original flat ViewController saved when entering globe mode,
+     *  so custom zoom/pan limits are restored on exit. */
+    private ViewController mFlatViewport;
+
     protected final Animator mAnimator;
     protected final MapPosition mMapPosition;
 
@@ -399,6 +403,10 @@ public abstract class Map implements TaskQueue {
             MapPosition pos = new MapPosition();
             mViewport.getMapPosition(pos);
 
+            // Store the original flat viewport so custom zoom/pan limits,
+            // pivot, and other settings are preserved when exiting globe mode.
+            mFlatViewport = mViewport;
+
             GlobeViewController globeVC = new GlobeViewController(sphereRadius);
             globeVC.setMapPosition(pos);
             mViewport = globeVC;
@@ -415,7 +423,11 @@ public abstract class Map implements TaskQueue {
             MapPosition pos = new MapPosition();
             mViewport.getMapPosition(pos);
 
-            ViewController flatVC = new ViewController();
+            // Restore the original flat viewport (preserving any custom
+            // zoom/pan limits, pivot, etc. the app configured before
+            // entering globe mode). Fall back to a fresh ViewController
+            // if no original was saved (should not happen).
+            ViewController flatVC = (mFlatViewport != null) ? mFlatViewport : new ViewController();
             flatVC.setMapPosition(pos);
             mViewport = flatVC;
 
