@@ -103,6 +103,7 @@ public class TerrainTileRenderer extends TileRenderer {
     private int mTerrainCnt;
     private int mLastLogCnt = -1; // for debug logging
     private boolean mLoggedTexStatus; // one-time tex shader status diagnostic
+    private boolean mLoggedGlobeFrame; // first globe frame diagnostic
 
     /**
      * Shader variant that adds texture sampling on top of the terrain mesh
@@ -435,6 +436,24 @@ public class TerrainTileRenderer extends TileRenderer {
                 useTex = mTexShader != null && mTexShader.program > 0;
             }
 
+            // Diagnostic: print every frame when in globe mode
+            if (isGlobe && mTerrainCnt > 0) {
+                if (!mLoggedGlobeFrame) {
+                    mLoggedGlobeFrame = true;
+                    float sr = (mProjection != null) ? mProjection.getSphereRadius() : -1;
+                    System.out.println("TERRAIN: GLOBE RENDERING — terrainCnt=" + mTerrainCnt
+                            + " useTex=" + useTex + " sphereRadius=" + sr);
+                    // Print first tile's bounds for debugging
+                    if (mTerrainTileData[0] != null && mTerrainTileData[0].buckets != null) {
+                        ExtrusionBuckets ebs = mTerrainTileData[0].buckets;
+                        System.out.println("TERRAIN: first tile x=" + ebs.x + " y=" + ebs.y
+                                + " z=" + ebs.zoomLevel);
+                    }
+                }
+            } else if (!isGlobe) {
+                mLoggedGlobeFrame = false;
+            }
+
             // One-time diagnostic
             if (mTerrainCnt > 0 && !mLoggedTexStatus) {
                 mLoggedTexStatus = true;
@@ -444,11 +463,6 @@ public class TerrainTileRenderer extends TileRenderer {
                 if (!useTex) {
                     System.out.println("TERRAIN: raster draping requires tex shader. "
                             + "Check terrain_globe_tex.glsl compilation.");
-                }
-                if (isGlobe) {
-                    float sr = (mProjection != null) ? mProjection.getSphereRadius() : -1;
-                    System.out.println("TERRAIN: globe mode active, sphereRadius=" + sr
-                            + " terrainCnt=" + mTerrainCnt);
                 }
             }
 
