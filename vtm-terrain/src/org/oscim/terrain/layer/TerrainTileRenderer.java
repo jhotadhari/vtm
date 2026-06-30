@@ -443,7 +443,12 @@ public class TerrainTileRenderer extends TileRenderer {
                         + " (terrain tiles rendered: " + mTerrainCnt + ")");
                 if (!useTex) {
                     System.out.println("TERRAIN: raster draping requires tex shader. "
-                            + "Check terrain_tex.glsl / terrain_globe_tex.glsl compilation.");
+                            + "Check terrain_globe_tex.glsl compilation.");
+                }
+                if (isGlobe) {
+                    float sr = (mProjection != null) ? mProjection.getSphereRadius() : -1;
+                    System.out.println("TERRAIN: globe mode active, sphereRadius=" + sr
+                            + " terrainCnt=" + mTerrainCnt);
                 }
             }
 

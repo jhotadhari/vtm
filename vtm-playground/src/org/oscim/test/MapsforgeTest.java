@@ -480,10 +480,19 @@ public class MapsforgeTest extends GdxMapApp {
             // Toggle globe projection mode
             mGlobeMode = !mGlobeMode;
             addTerrainLayer();
+            // In globe mode, hide flat layers — they render in Mercator space
+            // and appear tilted on the sphere surface.
+            if (mOsmLayer != null)
+                mOsmLayer.setEnabled(!mGlobeMode);
+            if (mHillshadeLayer != null)
+                mHillshadeLayer.setEnabled(!mGlobeMode);
+            if (mBaseLayer != null)
+                mBaseLayer.setEnabled(!mGlobeMode);
             // Force a full redraw to ensure terrain tiles load immediately
             mMap.clearMap();
             mMap.updateMap(true);
-            System.out.println("Globe projection: " + (mGlobeMode ? "ON" : "OFF"));
+            System.out.println("Globe projection: " + (mGlobeMode ? "ON" : "OFF")
+                    + " (OSM/hillshade/base map " + (mGlobeMode ? "hidden" : "visible") + ")");
             return true;
         }
 
