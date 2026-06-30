@@ -409,13 +409,17 @@ public class GlobeViewController extends ViewController {
         float iy = ny + t * dy;
         float iz = nz + t * dz;
 
-        // Convert ECEF intersection to Mercator [0,1] space for MapPosition compat
+        // Convert ECEF intersection to absolute Mercator [0,1], then to an
+        // offset from the current map center (ScanBox.transScale expects offsets).
         float lat = (float) Math.toDegrees(Math.asin(
                 FastMath.clamp(iz / mSphereRadius, -1.0, 1.0)));
         float lon = (float) Math.toDegrees(Math.atan2(iy, ix));
 
-        coords[position + 0] = (float) MercatorProjection.longitudeToX(lon);
-        coords[position + 1] = (float) MercatorProjection.latitudeToY(lat);
+        float absX = (float) MercatorProjection.longitudeToX(lon);
+        float absY = (float) MercatorProjection.latitudeToY(lat);
+
+        coords[position + 0] = absX - (float) mPos.x;
+        coords[position + 1] = absY - (float) mPos.y;
     }
 
     // ─────────────────────────────────────────────
