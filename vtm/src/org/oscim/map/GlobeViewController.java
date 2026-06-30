@@ -49,6 +49,9 @@ public class GlobeViewController extends ViewController {
     /** Far plane distance — must see the entire sphere from orbit. */
     private static final float GLOBE_VIEW_FAR = 30000f;
 
+    /** Vertical field of view in degrees. 45° comfortably shows the globe. */
+    private static final float GLOBE_FOV_Y = 45f;
+
     /** Camera distance multiplier at minimum zoom (fully zoomed out). */
     private static final float DISTANCE_FAR_MULTIPLIER = 4.0f;
 
@@ -97,12 +100,19 @@ public class GlobeViewController extends ViewController {
         mHeight = height;
         mWidth = width;
 
-        float ratio = (mHeight / mWidth) * VIEW_SCALE;
+        // Build a proper perspective frustum with a configurable FOV.
+        // The flat-map VIEW_SCALE was designed for a camera 3 units from
+        // the Mercator plane — useless for a 3D globe.
+        float aspect = mWidth / mHeight;
+        float tanHalfFovY = (float) Math.tan(Math.toRadians(GLOBE_FOV_Y / 2.0f));
+        float top = tanHalfFovY * GLOBE_VIEW_NEAR;
+        float bottom = -top;
+        float right = top * aspect;
+        float left = -right;
 
-        // Perspective frustum — wider near/far for globe distances
         GLMatrix.frustumM(mMatTemp, 0,
-                -VIEW_SCALE, VIEW_SCALE,
-                ratio, -ratio,
+                left, right,
+                bottom, top,
                 GLOBE_VIEW_NEAR, GLOBE_VIEW_FAR);
 
         mProjMatrix.set(mMatTemp);
