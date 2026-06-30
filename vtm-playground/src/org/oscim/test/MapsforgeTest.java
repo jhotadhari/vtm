@@ -480,6 +480,9 @@ public class MapsforgeTest extends GdxMapApp {
             // Toggle globe projection mode
             mGlobeMode = !mGlobeMode;
             addTerrainLayer();
+            // Force a full redraw to ensure terrain tiles load immediately
+            mMap.clearMap();
+            mMap.updateMap(true);
             System.out.println("Globe projection: " + (mGlobeMode ? "ON" : "OFF"));
             return true;
         }

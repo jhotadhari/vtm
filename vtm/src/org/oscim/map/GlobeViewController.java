@@ -58,8 +58,10 @@ public class GlobeViewController extends ViewController {
     /** Maximum orbit latitude in degrees (avoids lookAt pole singularity). */
     private static final double MAX_ORBIT_LATITUDE = 70.0;
 
-    /** Orbit sensitivity divisor for pan gestures. */
-    private static final double ORBIT_SENSITIVITY = 0.5;
+    /** Orbit sensitivity divisor for pan gestures.
+     * Lower = more sensitive. Scale-dependent: divided by sqrt(scale)
+     * so zoomed-out views don't spin wildly on small drags. */
+    private static final double ORBIT_SENSITIVITY = 0.15;
 
     /** Sphere radius in rendering units. */
     private final float mSphereRadius;
@@ -261,7 +263,9 @@ public class GlobeViewController extends ViewController {
         // Counter-rotate pan vector by map bearing so screen drag direction
         // matches map direction (same behavior as parent ViewController)
         ViewController.applyRotation(mx, my, mPos.bearing, mMovePoint);
-        double orbitSensitivity = ORBIT_SENSITIVITY / mPos.scale;
+        // Use sqrt(scale) so sensitivity scales smoothly: at zoom 2 (scale=4)
+        // sensitivity ≈ 0.075, at zoom 8 (scale=256) sensitivity ≈ 0.009.
+        double orbitSensitivity = ORBIT_SENSITIVITY / Math.sqrt(mPos.scale);
         mPos.x -= mMovePoint.x * orbitSensitivity;
         mPos.y -= mMovePoint.y * orbitSensitivity;
         clampPosition();
