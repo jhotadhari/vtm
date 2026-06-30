@@ -305,25 +305,18 @@ public class GlobeViewController extends ViewController {
         if (newScale == mPos.scale)
             return false;
 
-        // Save old scale for pivot compensation
-        double oldScale = mPos.scale;
         mPos.scale = newScale;
         mPos.zoomLevel = FastMath.log2((int) mPos.scale);
 
-        // Adjust orbit position so zoom centers on the pivot point.
-        // Same formula as parent ViewController.scaleMap.
+        // Adjust orbit position so zoom centers on the pivot point,
+        // matching the parent ViewController behavior exactly.
         if (pivotX != 0 || pivotY != 0) {
             pivotX -= mWidth * mPivotX;
             pivotY -= mHeight * mPivotY;
-            // At old scale, the pixel displacement corresponds to a Mercator
-            // displacement. At new scale, the same screen position needs
-            // a different Mercator position. Adjust to keep pivot stationary.
-            double mercatorPerPixel = 1.0 / (oldScale * Tile.SIZE);
-            mPos.x += pivotX * (1.0f - scale) * mercatorPerPixel;
-            mPos.y += pivotY * (1.0f - scale) * mercatorPerPixel;
-            mPos.y = FastMath.clamp(mPos.y, 0.0, 1.0);
+            moveMap(pivotX * (1.0f - scale), pivotY * (1.0f - scale));
+        } else {
+            updateMatrices();
         }
-        updateMatrices();
         return true;
     }
 
