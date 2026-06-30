@@ -55,14 +55,6 @@ public class GlobeViewController extends ViewController {
     /** Camera distance multiplier at maximum zoom (fully zoomed in). */
     private static final float DISTANCE_NEAR_MULTIPLIER = 1.02f;
 
-    /** Maximum orbit latitude in degrees (avoids lookAt pole singularity). */
-    private static final double MAX_ORBIT_LATITUDE = 70.0;
-
-    /** Orbit sensitivity divisor for pan gestures.
-     * Lower = more sensitive. Scale-dependent: divided by sqrt(scale)
-     * so zoomed-out views don't spin wildly on small drags. */
-    private static final double ORBIT_SENSITIVITY = 0.15;
-
     /** Sphere radius in rendering units. */
     private final float mSphereRadius;
 
@@ -143,24 +135,27 @@ public class GlobeViewController extends ViewController {
 
     /**
      * Returns the camera ECEF position for the current orbit state.
-     * Camera orbits the sphere center (0,0,0) at a distance determined
-     * by the current zoom scale.
+     * The camera is positioned above the geographic point the user was
+     * looking at in flat mode: mPos.x/y (Mercator [0,1]) map to the
+     * longitude/latitude of the target point on the sphere surface.
+     * The camera orbits above that point at a distance determined by zoom.
      */
     private void getCameraPosition(float[] out) {
         double cameraDistance = getCameraDistance();
 
-        // Orbit angles from MapPosition
-        // x in [0,1] maps to orbit longitude [0, 360]
-        // y in [0,1] maps to orbit latitude [-MAX, MAX]
-        double orbitLon = mPos.x * 360.0;
-        double orbitLat = (mPos.y - 0.5) * 2.0 * MAX_ORBIT_LATITUDE;
-        double orbitLatRad = Math.toRadians(orbitLat);
-        double orbitLonRad = Math.toRadians(orbitLon);
+        // MapPosition x,y in Mercator [0,1] → geographic position of
+        // the point the user was centered on in flat mode.
+        double targetLon = MercatorProjection.toLongitude(mPos.x);
+        double targetLat = MercatorProjection.toLatitude(mPos.y);
 
-        double cosLat = Math.cos(orbitLatRad);
-        out[0] = (float) (cameraDistance * cosLat * Math.cos(orbitLonRad));
-        out[1] = (float) (cameraDistance * cosLat * Math.sin(orbitLonRad));
-        out[2] = (float) (cameraDistance * Math.sin(orbitLatRad));
+        // Camera orbits above the target point, pushed out to cameraDistance
+        // from the sphere center (along the surface normal at that point)
+        double latRad = Math.toRadians(targetLat);
+        double lonRad = Math.toRadians(targetLon);
+        double cosLat = Math.cos(latRad);
+        out[0] = (float) (cameraDistance * cosLat * Math.cos(lonRad));
+        out[1] = (float) (cameraDistance * cosLat * Math.sin(lonRad));
+        out[2] = (float) (cameraDistance * Math.sin(latRad));
     }
 
     /**
@@ -263,12 +258,26 @@ public class GlobeViewController extends ViewController {
         // Counter-rotate pan vector by map bearing so screen drag direction
         // matches map direction (same behavior as parent ViewController)
         ViewController.applyRotation(mx, my, mPos.bearing, mMovePoint);
-        // Use sqrt(scale) so sensitivity scales smoothly: at zoom 2 (scale=4)
-        // sensitivity ≈ 0.075, at zoom 8 (scale=256) sensitivity ≈ 0.009.
-        double orbitSensitivity = ORBIT_SENSITIVITY / Math.sqrt(mPos.scale);
-        mPos.x -= mMovePoint.x * orbitSensitivity;
-        mPos.y -= mMovePoint.y * orbitSensitivity;
-        clampPosition();
+
+        // Convert screen pixels to Mercator [0,1] pan amount.
+        // At zoom: 1 Mercator unit = scale * Tile.SIZE pixels on screen.
+        double mercatorPerPixel = 1.0 / (mPos.scale * Tile.SIZE);
+
+        // How much to shift the geographic center.
+        // Clamp to avoid wild jumps at low zoom while keeping responsiveness.
+        double panX = mMovePoint.x * mercatorPerPixel * 0.1;
+        double panY = mMovePoint.y * mercatorPerPixel * 0.1;
+
+        mPos.x += panX;
+        mPos.y += panY;
+
+        // Clamp latitude (Mercator y range)
+        mPos.y = FastMath.clamp(mPos.y, 0.0, 1.0);
+
+        // Wrap longitude
+        while (mPos.x > 1) mPos.x -= 1;
+        while (mPos.x < 0) mPos.x += 1;
+
         updateMatrices();
     }
 
