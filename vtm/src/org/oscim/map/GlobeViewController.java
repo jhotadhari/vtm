@@ -420,6 +420,63 @@ public class GlobeViewController extends ViewController {
     }
 
     // ─────────────────────────────────────────────
+    // Map extents — override for sphere intersection
+    // ─────────────────────────────────────────────
+
+    @Override
+    public void getMapExtents(float[] box, float add) {
+        // Sample a grid across the screen to find the sphere's visible extent.
+        // The 4 screen corners may miss the sphere entirely when the FOV is
+        // wider than the sphere's apparent size. We sample 25 points (5×5)
+        // and build a Mercator bounding box from the sphere intersections.
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        int hits = 0;
+
+        float[] coords = new float[2];
+        for (int j = 0; j < 5; j++) {
+            float sy = 1.0f - j * 0.5f;
+            for (int i = 0; i < 5; i++) {
+                float sx = -1.0f + i * 0.5f;
+                unproject(sx, sy, coords, 0);
+                if (!Float.isNaN(coords[0])) {
+                    minX = Math.min(minX, coords[0]);
+                    maxX = Math.max(maxX, coords[0]);
+                    minY = Math.min(minY, coords[1]);
+                    maxY = Math.max(maxY, coords[1]);
+                    hits++;
+                }
+            }
+        }
+
+        if (hits == 0) {
+            // No sphere visible — return empty extent
+            for (int i = 0; i < 8; i++) box[i] = 0;
+            return;
+        }
+
+        // Fill box: bottom-right, bottom-left, top-left, top-right
+        box[0] = maxX; box[1] = minY;
+        box[2] = minX; box[3] = minY;
+        box[4] = minX; box[5] = maxY;
+        box[6] = maxX; box[7] = maxY;
+
+        if (add != 0) {
+            for (int i = 0; i < 8; i += 2) {
+                float cx = (minX + maxX) * 0.5f;
+                float cy = (minY + maxY) * 0.5f;
+                float dx = box[i] - cx;
+                float dy = box[i+1] - cy;
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                    box[i]   += dx / len * add;
+                    box[i+1] += dy / len * add;
+                }
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────
     // Screen coordinate helpers
     // ─────────────────────────────────────────────
 
