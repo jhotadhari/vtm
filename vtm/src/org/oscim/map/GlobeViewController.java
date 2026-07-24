@@ -43,8 +43,8 @@ public class GlobeViewController extends ViewController {
     /** Default sphere radius in rendering units. */
     private static final float DEFAULT_SPHERE_RADIUS = 4096.0f;
 
-    /** Near plane distance. Set very close since the camera can approach
-     *  the sphere surface (~82 units at max zoom with radius 4096). */
+    /** Near plane distance. At closest zoom the camera is ~82 units above the
+     *  sphere surface (4096 × 0.02 = 82); 1 unit near plane is safe. */
     private static final float GLOBE_VIEW_NEAR = 1f;
 
     /** Far plane distance — must see the entire sphere from the farthest orbit. */
@@ -53,10 +53,22 @@ public class GlobeViewController extends ViewController {
     /** Vertical field of view in degrees. 45° comfortably shows the globe. */
     private static final float GLOBE_FOV_Y = 45f;
 
+    /**
+     * Maximum automatic forward-tilt applied when the camera is close to the
+     * sphere. At 60° the camera looks well ahead of nadir so the horizon is
+     * visible in the upper part of the screen ("hovering above terrain"), not
+     * the inside-a-hollow-sphere feeling of looking straight at the centre.
+     */
+    private static final double MAX_AUTO_TILT_RAD = Math.toRadians(60.0);
+
     /** Camera distance multiplier at minimum zoom (fully zoomed out). */
     private static final float DISTANCE_FAR_MULTIPLIER = 4.0f;
 
-    /** Camera distance multiplier at maximum zoom (fully zoomed in). */
+    /** Camera distance multiplier at maximum zoom (fully zoomed in).
+     *  1.02× keeps the camera just above the sphere surface. The tile zoom
+     *  is capped dynamically in TerrainTileLayer so large mesh triangles
+     *  never span the sphere from close range (which caused visual artifacts
+     *  when this was combined with a fixed low tile zoom). */
     private static final float DISTANCE_NEAR_MULTIPLIER = 1.02f;
 
     /** Maximum orbit latitude in degrees. Clamped to avoid lookAt pole
@@ -217,26 +229,110 @@ public class GlobeViewController extends ViewController {
     // View/projection matrices
     // ─────────────────────────────────────────────
 
+    /**
+     * Returns the forward-tilt angle (radians) needed to keep the globe
+     * horizon at the top edge of the screen when the camera is inside the
+     * fill-FOV zone (D < R/sin(FOV/2) ≈ 2.61R).
+     *
+     * Without tilt the camera always looks at the sphere centre. When the
+     * sphere is larger than the FOV the user sees terrain in every direction
+     * with no visible horizon — the "inside a hollow sphere" sensation. Tilting
+     * forward by the computed angle keeps the geometric horizon right at the
+     * screen's top edge so the scene always reads as "hovering above terrain."
+     *
+     * φ = arctan(R / √(D²−R²)) − FOV/2, clamped to [0, MAX_AUTO_TILT_RAD].
+     */
+    private double computeAutoTilt(double cameraDistance) {
+        double r = mSphereRadius;
+        double dSq = cameraDistance * cameraDistance;
+        double rSq = r * r;
+        if (dSq <= rSq) return MAX_AUTO_TILT_RAD;       // inside sphere (safety)
+        double horizonAngle = Math.atan(r / Math.sqrt(dSq - rSq));
+        double fovHalf = Math.toRadians(GLOBE_FOV_Y / 2.0);
+        return Math.min(MAX_AUTO_TILT_RAD, Math.max(0.0, horizonAngle - fovHalf));
+    }
+
     @Override
     protected void updateMatrices() {
         // Camera position in world space (sphere center = origin)
         getCameraPosition(mCameraPos);
 
-        // Look-at point: sphere center (0, 0, 0)
-        float centerX = 0f;
-        float centerY = 0f;
-        float centerZ = 0f;
+        double D = getCameraDistance();
+        double phi = computeAutoTilt(D);
+
+        float lookX, lookY, lookZ;
+
+        if (phi < 1e-4) {
+            // Far from sphere: no tilt, look straight at the centre.
+            lookX = 0f;
+            lookY = 0f;
+            lookZ = 0f;
+        } else {
+            // Close to sphere: tilt toward local north to keep the horizon
+            // at the top of the screen.
+            //
+            // Camera unit vector n̂ = C/D (outward surface normal at camera pos)
+            double nx = mCameraPos[0] / D;
+            double ny = mCameraPos[1] / D;
+            double nz = mCameraPos[2] / D;   // = sin(targetLat)
+
+            // Local north tangent: world-Z minus its n̂-projection.
+            //   N_tan = (0,0,1) − n̂ × (n̂·(0,0,1))
+            double ntx = -nx * nz;
+            double nty = -ny * nz;
+            double ntz =  1.0 - nz * nz;
+            double ntLen = Math.sqrt(ntx * ntx + nty * nty + ntz * ntz);
+
+            if (ntLen < 1e-6) {
+                // At exactly the pole the tangent degenerates; fall back.
+                lookX = 0f;
+                lookY = 0f;
+                lookZ = 0f;
+            } else {
+                ntx /= ntLen;  nty /= ntLen;  ntz /= ntLen;
+
+                double cosPhi = Math.cos(phi);
+                double sinPhi = Math.sin(phi);
+
+                // Tilted look direction (unit vector): rotate nadir −n̂ toward
+                // north tangent by phi.
+                double ftx = -cosPhi * nx + sinPhi * ntx;
+                double fty = -cosPhi * ny + sinPhi * nty;
+                double ftz = -cosPhi * nz + sinPhi * ntz;
+
+                // Intersect the tilted ray with the sphere surface (near hit).
+                // t = D·cos(φ) − √(R²− D²·sin²(φ))
+                double r = mSphereRadius;
+                double disc = r * r - D * D * sinPhi * sinPhi;
+                double t;
+                if (disc >= 0) {
+                    t = D * cosPhi - Math.sqrt(disc);
+                } else {
+                    // Ray misses sphere (shouldn't occur for valid φ).
+                    t = D * cosPhi;
+                }
+
+                if (t < 1.0) {
+                    // Look target too close to camera (very low altitude edge
+                    // case): project far along the tilt direction instead.
+                    double far = 10000.0;
+                    lookX = (float) (mCameraPos[0] + far * ftx);
+                    lookY = (float) (mCameraPos[1] + far * fty);
+                    lookZ = (float) (mCameraPos[2] + far * ftz);
+                } else {
+                    lookX = (float) (mCameraPos[0] + t * ftx);
+                    lookY = (float) (mCameraPos[1] + t * fty);
+                    lookZ = (float) (mCameraPos[2] + t * ftz);
+                }
+            }
+        }
 
         // Up vector: world Z (north pole direction)
-        float upX = 0f;
-        float upY = 0f;
-        float upZ = 1f;
-
         // Build view matrix using lookAt
         GLMatrix.lookAt(mMatTemp, 0,
                 mCameraPos[0], mCameraPos[1], mCameraPos[2],
-                centerX, centerY, centerZ,
-                upX, upY, upZ);
+                lookX, lookY, lookZ,
+                0f, 0f, 1f);
 
         mViewMatrix.set(mMatTemp);
 

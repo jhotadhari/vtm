@@ -58,6 +58,15 @@ public class TerrainTileDataSource implements ITileDataSource {
     private final TerrainProjection mProjection;
     private final ElevationAPI mElevationAPI;
 
+    /**
+     * Raster textures are scaled down to this size (px) before upload in globe
+     * mode. Each terrain tile covers several degrees of the globe; at typical
+     * camera distances the tile occupies at most ~150 screen pixels across, so
+     * 64×64 gives adequate detail while using 16× less heap+VRAM than 256×256.
+     * (1500 cached tiles × 64×64×4 B ≈ 24 MB vs 384 MB at full size.)
+     */
+    private static final int GLOBE_RASTER_TEX_SIZE = 64;
+
     /** Single-thread executor for async raster tile fetches. Created lazily. */
     private ExecutorService mRasterExecutor;
 
@@ -304,6 +313,22 @@ public class TerrainTileDataSource implements ITileDataSource {
                     rasterDs.query(tile, rasterSink);
                     if (mCancelled) return;
                     result = captured[0];
+                }
+
+                // In globe mode, scale the raster bitmap down to GLOBE_RASTER_TEX_SIZE
+                // before queuing it. Globe tiles cover many degrees and are small on
+                // screen, so high-resolution textures waste heap and VRAM.
+                if (result != null && result.isValid()
+                        && mProjection.getType() == TerrainProjection.Type.GLOBE) {
+                    int target = GLOBE_RASTER_TEX_SIZE;
+                    if (result.getWidth() > target || result.getHeight() > target) {
+                        Bitmap scaled = CanvasAdapter.newBitmap(target, target, 0);
+                        Canvas scaledCanvas = CanvasAdapter.newCanvas();
+                        scaledCanvas.setBitmap(scaled);
+                        scaledCanvas.drawBitmapScaled(result);
+                        result.recycle();
+                        result = scaled;
+                    }
                 }
 
                 // Store the captured bitmap in the pending texture map.

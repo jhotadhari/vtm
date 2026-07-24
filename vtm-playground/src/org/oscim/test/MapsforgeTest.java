@@ -288,10 +288,10 @@ public class MapsforgeTest extends GdxMapApp {
             if (rasterSource != null) {
                 terrainSource.setRasterSource(rasterSource);
                 if (mGlobeMode) {
-                    // In globe mode fetch a coarser parent tile (zoom 3 = ~45° per tile)
-                    // and crop the sub-region, so globe imagery shows continental detail
-                    // instead of city-level detail.
-                    terrainSource.setRasterMaxZoom(3);
+                    // Cap raster fetch at zoom 6 so parent-bitmap crops stay at
+                    // 32×32 px minimum (zoomDiff≤3). At tile zoom 5-6 the exact
+                    // zoom-5/6 raster tile is fetched (no crop, full 256×256).
+                    terrainSource.setRasterMaxZoom(6);
                 }
                 System.out.println("TERRAIN: raster source configured: "
                         + rasterSource.getClass().getSimpleName()

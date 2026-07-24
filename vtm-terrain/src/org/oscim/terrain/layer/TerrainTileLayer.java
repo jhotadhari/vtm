@@ -16,7 +16,9 @@ package org.oscim.terrain.layer;
 
 import org.mapsforge.map.elevation.ElevationAPI;
 import org.oscim.backend.canvas.Bitmap;
+import org.oscim.core.MapPosition;
 import org.oscim.core.MercatorProjection;
+import org.oscim.event.Event;
 import org.oscim.layers.tile.MapTile;
 import org.oscim.layers.tile.MapTile.TileData;
 import org.oscim.layers.tile.TileLayer;
@@ -61,29 +63,21 @@ public class TerrainTileLayer extends TileLayer {
 
     /**
      * Globe cache limit.
-     * At zoom 5 (tile width 11.25°) a 60° visible cap needs a bounding box
-     * of roughly 200 tiles (Mercator-stretched). 700 leaves headroom for zoom
-     * transitions and the previous tile set.
+     * Raster bitmaps are now 32×32 crops (~4 KB) rather than 256×256 scaled
+     * bitmaps (~256 KB), so heap per tile is ~20 KB steady-state.
+     * 1500 tiles × 20 KB = 30 MB, comfortably inside the 768 MB heap.
+     * The larger cap is needed at dynamic tile zoom 7–8 where the Mercator
+     * bounding box (rectangle) can hold ~1200 tiles even though only ~400
+     * of them actually lie inside the visible spherical disc.
      */
-    private static final int CACHE_LIMIT_GLOBE = 700;
+    private static final int CACHE_LIMIT_GLOBE = 1500;
 
     /**
      * Maximum tiles ScanBox may request per frame in globe mode.
-     * Matches CACHE_LIMIT_GLOBE so the ScanBox is never dropped-on-overflow
-     * before the cache can hold the results.
+     * Matches CACHE_LIMIT_GLOBE so the ScanBox is never cut off before
+     * the cache can absorb the result.
      */
-    private static final int MAX_NEW_TILES_GLOBE = 700;
-
-    /**
-     * Maximum terrain tile zoom for globe mode.
-     * At zoom 6 (tile width 5.6°) a 60° visible cap (camera ~2R) needs up
-     * to ~850 tiles — too many for the 512 MB heap with concurrent mesh
-     * allocation. At zoom 5 (tile width 11.25°) the same cap needs ~200
-     * tiles, well within MAX_NEW_TILES_GLOBE. Raster crops from zoom-3
-     * parents are 64×64 px at zoom 5 (vs 32×32 at zoom 6), giving better
-     * texture quality per crop.
-     */
-    private static final int GLOBE_MAX_TILE_ZOOM = 5;
+    private static final int MAX_NEW_TILES_GLOBE = 1500;
 
     /** Key for storing ExtrusionBuckets in MapTile's TileData chain. */
     private static final Object TERRAIN_DATA = TerrainTileLayer.class.getName();
@@ -136,6 +130,9 @@ public class TerrainTileLayer extends TileLayer {
 
     private final TerrainTileSource mTerrainSource;
 
+    /** True when the terrain projection is GLOBE; enables dynamic tile zoom. */
+    private final boolean mIsGlobe;
+
     public TerrainTileLayer(Map map, TerrainTileSource tileSource) {
         this(map, tileSource,
                 tileSource.getProjection().getType() == TerrainProjection.Type.GLOBE
@@ -148,18 +145,15 @@ public class TerrainTileLayer extends TileLayer {
                 new TerrainTileRenderer());
 
         mTerrainSource = tileSource;
+        mIsGlobe = tileSource.getProjection().getType() == TerrainProjection.Type.GLOBE;
 
-        if (tileSource.getProjection().getType() == TerrainProjection.Type.GLOBE) {
-            // Globe mode needs far more tiles per frame than the flat-map default (≈100).
-            // A 45° FOV at zoom 8 requires up to 32×32 = 1024 tiles; use a larger set.
+        if (mIsGlobe) {
+            // Globe mode needs far more tiles per frame than the flat-map default (~100).
             mTileManager.setMaxNewTiles(MAX_NEW_TILES_GLOBE);
-
-            // Cap terrain tile zoom at GLOBE_MAX_TILE_ZOOM so the tile count stays
-            // within MAX_NEW_TILES_GLOBE. At higher orbit zooms the TileManager would
-            // otherwise request zoom-10+ tiles, needing 10,000+ tiles to cover the
-            // visible 45° FOV — far more than MAX_NEW_TILES_GLOBE can hold.
-            int effectiveMaxZoom = Math.min(tileSource.getZoomLevelMax(), GLOBE_MAX_TILE_ZOOM);
-            mTileManager.setZoomLevel(tileSource.getZoomLevelMin(), effectiveMaxZoom);
+            // Initial tile zoom; updated dynamically on every POSITION_EVENT
+            // by onMapEvent() → computeGlobeTileZoom(). Start at zoom 5 which
+            // is safe for the global overview the user typically enters at.
+            mTileManager.setZoomLevel(5, 5);
         } else {
             mTileManager.setZoomLevel(tileSource.getZoomLevelMin(),
                     tileSource.getZoomLevelMax());
@@ -176,6 +170,60 @@ public class TerrainTileLayer extends TileLayer {
 
         log.info("TERRAIN: layer created, zoom range "
                 + tileSource.getZoomLevelMin() + "-" + tileSource.getZoomLevelMax());
+    }
+
+    /**
+     * Computes the appropriate terrain tile zoom for globe mode from the current
+     * map scale. As scale increases (camera approaches the sphere), the visible
+     * surface cap shrinks and we load more-detailed tiles without exceeding
+     * MAX_NEW_TILES_GLOBE.
+     *
+     * The logScale parameter t ∈ [0,1]:
+     *   t=0 → camera at ~4R (global overview, cap ~75°)
+     *   t=1 → camera at ~1.02R (just above surface, cap ~11.5°)
+     *
+     * The ScanBox fills a Mercator rectangle around the visible disc, so
+     * roughly 2× more tiles are requested than actually land inside the
+     * circular disc. The cap at 1500 absorbs that waste.
+     *
+     * The globe horizon (sphere edge) fills the 45° vertical FOV when D=2.61R
+     * (t≈0.313). Below that distance the user is perceptually "inside" the
+     * globe regardless of tile zoom. Zoom=5 tiles (coarser, more globe-like)
+     * are kept active across that fill-FOV zone so the tile transition to
+     * zoom=6 only fires when the camera is already well inside the globe and
+     * the higher-resolution texture is visually appropriate.
+     *
+     * Tile counts at each transition point (verified ≤ 1500):
+     *   t=0.70 (D≈1.56R, cap≈50°): zoom 6 → ~620 tiles
+     *   t=0.92 (D≈1.14R, cap≈29°): zoom 7 → ~350 tiles
+     *   t=0.996 (D≈1.026R, cap≈13°): zoom 8 → ~190 tiles
+     */
+    private static int computeGlobeTileZoom(double scale) {
+        final double minScale = 1 << 2;   // Viewport.MIN_ZOOM_LEVEL = 2
+        final double maxScale = 1 << 20;  // Viewport.MAX_ZOOM_LEVEL = 20
+        if (scale <= minScale) return 5;
+        if (scale >= maxScale) return 8;
+        double t = Math.log(scale / minScale) / Math.log(maxScale / minScale);
+        if (t < 0.70) return 5;   // D > ~1.56R: global overview; covers fill-FOV zone
+        if (t < 0.92) return 6;   // D in [1.14R, 1.56R]: close-in view
+        if (t < 0.996) return 7;  // D in [1.026R, 1.14R]: near surface
+        return 8;                  // D ≤ ~1.026R: skimming the surface
+    }
+
+    @Override
+    public void onMapEvent(Event event, MapPosition pos) {
+        if (mIsGlobe && event == Map.POSITION_EVENT && isEnabled()) {
+            // Recompute the tile zoom level from the current scale before
+            // TileManager.update() uses it. Without this, mPos.zoomLevel
+            // (= log2(scale)) is used directly, which at globe scale=256
+            // (zoom 8) would request zoom-8 tiles for the full-globe view —
+            // producing ~15,000 tiles instead of the safe ~200.
+            int gz = computeGlobeTileZoom(pos.scale);
+            gz = Math.max(mTerrainSource.getZoomLevelMin(),
+                    Math.min(mTerrainSource.getZoomLevelMax(), gz));
+            mTileManager.setZoomLevel(gz, gz);
+        }
+        super.onMapEvent(event, pos);
     }
 
     @Override

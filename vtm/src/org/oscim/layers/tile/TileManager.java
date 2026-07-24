@@ -55,13 +55,12 @@ public class TileManager {
 
     /**
      * Fallback tile-zoom cap for globe mode on layers that do not set an
-     * explicit zoom range via setZoomLevel(). At zoom 8 (tile width 1.4°)
-     * the visible 45° FOV needs 32×32 = 1024 tiles — the upper limit that
-     * comfortably fits in the auto-expanded tile set. Layers that call
-     * setZoomLevel() with a lower mMaxZoom (e.g. terrain at zoom 7) are
-     * unaffected because the cap only fires when mMaxZoom > this value.
+     * explicit zoom range via setZoomLevel(). Raised to 10 so that
+     * TerrainTileLayer's dynamic zoom (which never exceeds 9) passes through
+     * unchanged, while still protecting layers that forget to cap themselves
+     * from requesting zoom-20 tiles on a full-globe view.
      */
-    private static final int GLOBE_FALLBACK_MAX_TILE_ZOOM = 8;
+    private static final int GLOBE_FALLBACK_MAX_TILE_ZOOM = 10;
 
     int mMinZoom;
     private int mMaxZoom;
