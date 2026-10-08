@@ -226,11 +226,11 @@ public class LabelPlacement {
             if (l.bbox == null)
                 l.bbox = new OBB2D(l.x, l.y, l.x1, l.y1,
                         l.width + MIN_WAY_DIST,
-                        l.text.fontHeight + MIN_WAY_DIST);
+                        l.text.paint.getFontHeight() + MIN_WAY_DIST);
             else
                 l.bbox.set(l.x, l.y, l.x1, l.y1,
                         l.width + MIN_WAY_DIST,
-                        l.text.fontHeight + MIN_WAY_DIST);
+                        l.text.paint.getFontHeight() + MIN_WAY_DIST);
 
             if (dbg || ti.width < ti.length * scale)
                 overlaps = checkOverlap(l);
@@ -278,7 +278,7 @@ public class LabelPlacement {
 
             l.bbox.setNormalized(l.x, l.y, cos, -sin,
                     l.width + MIN_CAPTION_DIST,
-                    l.text.fontHeight + MIN_CAPTION_DIST,
+                    l.text.paint.getFontHeight() + MIN_CAPTION_DIST,
                     l.text.dy);
 
             for (Label o = mLabels; o != null; ) {
@@ -431,7 +431,7 @@ public class LabelPlacement {
 
             l.bbox.set(l.x, l.y, l.x1, l.y1,
                     l.width + MIN_WAY_DIST,
-                    l.text.fontHeight + MIN_WAY_DIST);
+                    l.text.paint.getFontHeight() + MIN_WAY_DIST);
 
             byte overlaps = checkOverlap(l);
 

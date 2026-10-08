@@ -96,7 +96,7 @@ public class TextBucket extends TextureBucket {
         for (TextItem it = labels; it != null; ) {
 
             float width = it.width + 2 * mFontPadX;
-            float height = (int) (it.text.fontHeight) + 0.5f;
+            float height = (int) (it.text.paint.getFontHeight()) + 0.5f;
 
             if (height > TEXTURE_HEIGHT)
                 height = TEXTURE_HEIGHT;
@@ -126,7 +126,7 @@ public class TextBucket extends TextureBucket {
             }
 
             xx = x + mFontPadX;
-            yy = y + height - it.text.fontDescent;
+            yy = y + height - it.text.paint.getFontDescent();
 
             // FIXME !!!
             if (width > TEXTURE_WIDTH)
